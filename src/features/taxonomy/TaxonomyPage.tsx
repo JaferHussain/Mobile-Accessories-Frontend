@@ -34,6 +34,10 @@ export function TaxonomyPage({ resource, singular, plural }: TaxonomyPageProps) 
   const [editing, setEditing] = useState<TaxonomyItem | null>(null);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
+
+  // "Local" belongs to the maker, not to the kind of product, so only the Brands screen offers it.
+  const isBrands = resource === 'brands';
+  const [isLocal, setIsLocal] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
   const { data, isPending, error } = useQuery({
@@ -78,6 +82,7 @@ export function TaxonomyPage({ resource, singular, plural }: TaxonomyPageProps) 
     setEditing(null);
     setName('');
     setDescription('');
+    setIsLocal(false);
     setFormError(null);
   }
 
@@ -85,6 +90,7 @@ export function TaxonomyPage({ resource, singular, plural }: TaxonomyPageProps) 
     setEditing(item);
     setName(item.name);
     setDescription(item.description ?? '');
+    setIsLocal(item.isLocal ?? false);
     setFormError(null);
   }
 
@@ -97,7 +103,12 @@ export function TaxonomyPage({ resource, singular, plural }: TaxonomyPageProps) 
       return;
     }
 
-    save.mutate({ name: name.trim(), description: description.trim() || null });
+    save.mutate({
+      name: name.trim(),
+      description: description.trim() || null,
+      // Sent for brands only. A brand is Imported unless the owner ticks this (FR-087a).
+      ...(isBrands ? { isLocal } : {}),
+    });
   }
 
   return (
@@ -133,6 +144,17 @@ export function TaxonomyPage({ resource, singular, plural }: TaxonomyPageProps) 
               onChange={(event) => setDescription(event.target.value)}
             />
           </div>
+
+          {isBrands && (
+            <label className="checkbox">
+              <input
+                type="checkbox"
+                checked={isLocal}
+                onChange={(event) => setIsLocal(event.target.checked)}
+              />
+              Local brand (made locally, not imported)
+            </label>
+          )}
 
           <div className="form-actions">
             <button type="submit" disabled={save.isPending}>
@@ -181,6 +203,7 @@ export function TaxonomyPage({ resource, singular, plural }: TaxonomyPageProps) 
             <tr>
               <th scope="col">Name</th>
               <th scope="col">Description</th>
+              {isBrands && <th scope="col">Made</th>}
               <th scope="col">Products</th>
               {isAdmin && (
                 <th scope="col">
@@ -197,6 +220,7 @@ export function TaxonomyPage({ resource, singular, plural }: TaxonomyPageProps) 
                   {!item.isActive && <span className="badge badge--muted">Retired</span>}
                 </td>
                 <td>{item.description ?? '—'}</td>
+                {isBrands && <td>{item.isLocal ? 'Local' : 'Imported'}</td>}
                 <td className="numeric">{item.productCount}</td>
                 {isAdmin && (
                   <td>

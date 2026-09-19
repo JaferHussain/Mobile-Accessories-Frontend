@@ -10,6 +10,8 @@ export interface Product {
   category: string;
   brandId?: number | null;
   brand?: string | null;
+  /** Whether the brand is marked local. False for an unbranded product. */
+  brandIsLocal?: boolean;
   model?: string | null;
   barcode?: string | null;
   imagePath?: string | null;
@@ -33,6 +35,8 @@ export interface ProductSearchParams {
   brandId?: number;
   /** Which price to quote. 'Wholesale' returns the wholesale price as salePrice. */
   saleType?: 'Retail' | 'Wholesale';
+  /** Only products whose brand is marked local. Unbranded products are never included. */
+  localOnly?: boolean;
   lowStockOnly?: boolean;
   page?: number;
   pageSize?: number;

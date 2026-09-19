@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
@@ -252,7 +252,96 @@ describe('Brands page', () => {
     await user.click(screen.getByRole('button', { name: /save brand/i }));
 
     await waitFor(() =>
-      expect(brandApi.create).toHaveBeenCalledWith({ name: 'Anker', description: null }),
+      // A brand save now also says whether the brand is local (FR-087a); unticked means Imported.
+      expect(brandApi.create).toHaveBeenCalledWith({
+        name: 'Anker',
+        description: null,
+        isLocal: false,
+      }),
     );
+  });
+});
+
+describe('Local brands on the Brands and Categories screens', () => {
+  beforeEach(() => {
+    tokenStore.clear();
+    vi.clearAllMocks();
+    vi.mocked(brandApi.search).mockResolvedValue(
+      page([
+        { id: 5, name: 'Baseus', description: null, isActive: true, productCount: 2, isLocal: false },
+        { id: 6, name: 'Faster', description: null, isActive: true, productCount: 1, isLocal: true },
+      ]),
+    );
+    vi.mocked(categoryApi.search).mockResolvedValue(page([cables]));
+  });
+
+  it('shows whether each brand is local or imported', async () => {
+    renderPage(<BrandsPage />);
+
+    await screen.findByText('Faster');
+
+    const fasterRow = screen.getByText('Faster').closest('tr')!;
+    const baseusRow = screen.getByText('Baseus').closest('tr')!;
+
+    expect(within(fasterRow).getByText('Local')).toBeInTheDocument();
+    expect(within(baseusRow).getByText('Imported')).toBeInTheDocument();
+  });
+
+  it('creates a brand as local when the owner ticks it', async () => {
+    vi.mocked(brandApi.create).mockResolvedValue({
+      id: 7, name: 'Awei', description: null, isActive: true, productCount: 0, isLocal: true,
+    });
+
+    const user = userEvent.setup();
+    renderPage(<BrandsPage />);
+
+    await screen.findByText('Faster');
+    await user.type(screen.getByLabelText('Name'), 'Awei');
+    await user.click(screen.getByLabelText(/local brand/i));
+    await user.click(screen.getByRole('button', { name: /save brand/i }));
+
+    await waitFor(() =>
+      expect(brandApi.create).toHaveBeenCalledWith(expect.objectContaining({ name: 'Awei', isLocal: true })),
+    );
+  });
+
+  it('leaves a new brand imported unless ticked', async () => {
+    vi.mocked(brandApi.create).mockResolvedValue({
+      id: 8, name: 'Anker', description: null, isActive: true, productCount: 0, isLocal: false,
+    });
+
+    const user = userEvent.setup();
+    renderPage(<BrandsPage />);
+
+    await screen.findByText('Faster');
+    expect(screen.getByLabelText(/local brand/i)).not.toBeChecked();
+
+    await user.type(screen.getByLabelText('Name'), 'Anker');
+    await user.click(screen.getByRole('button', { name: /save brand/i }));
+
+    await waitFor(() =>
+      expect(brandApi.create).toHaveBeenCalledWith(expect.objectContaining({ isLocal: false })),
+    );
+  });
+
+  it('prefills the tick when editing a local brand', async () => {
+    const user = userEvent.setup();
+    renderPage(<BrandsPage />);
+
+    await screen.findByText('Faster');
+    const fasterRow = screen.getByText('Faster').closest('tr')!;
+    await user.click(within(fasterRow).getByRole('button', { name: 'Edit' }));
+
+    expect(screen.getByLabelText(/local brand/i)).toBeChecked();
+  });
+
+  it('does not offer local on the Categories screen', async () => {
+    renderPage(<CategoriesPage />);
+
+    await screen.findByText('Cables');
+
+    // Local is a property of the maker, not of the kind of product.
+    expect(screen.queryByLabelText(/local brand/i)).not.toBeInTheDocument();
+    expect(screen.queryByText('Imported')).not.toBeInTheDocument();
   });
 });

@@ -15,11 +15,18 @@ export interface TaxonomyItem {
   isActive: boolean;
   /** How many products use it. Drives the warning before retiring one. */
   productCount: number;
+  /**
+   * Brands only: true for a locally made brand, false for an imported one (FR-087a). Absent on
+   * categories, where "local" has no meaning.
+   */
+  isLocal?: boolean;
 }
 
 export interface TaxonomyUpsert {
   name: string;
   description?: string | null;
+  /** Brands only. Omitted means Imported. */
+  isLocal?: boolean;
 }
 
 export interface TaxonomySearchParams {

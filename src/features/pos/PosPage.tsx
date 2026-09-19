@@ -25,9 +25,21 @@ export function PosPage() {
       }
     }
 
-    const page = await productApi.search({ search: term, saleType, pageSize: 1 });
+    try {
+      const page = await productApi.search({ search: term, saleType, pageSize: 1 });
 
-    return page.items[0] ?? null;
+      return page.items[0] ?? null;
+    } catch (error) {
+      // The server refuses a search made only of one-letter words. At the counter that is a
+      // scanner or stray key press producing something that is not a product, so the honest
+      // answer is "No product found" rather than a validation message. Anything else — a real
+      // failure — still surfaces.
+      if (error instanceof ApiError && error.status === 400 && error.code === 'VALIDATION_FAILED') {
+        return null;
+      }
+
+      throw error;
+    }
   }
 
   async function repriceProduct(productId: number, saleType: SaleType): Promise<number | null> {
