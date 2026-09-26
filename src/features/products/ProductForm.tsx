@@ -6,9 +6,21 @@ import type { Product, ProductUpsert } from './productApi';
 
 export interface ProductFormProps {
   initial?: Product;
-  onSubmit: (product: ProductUpsert) => Promise<void>;
+
+  /**
+   * The picture arrives separately from the fields because its upload is addressed to a
+   * product id that does not exist until this save succeeds. The caller sequences
+   * create-then-upload; the form's job is only to hand over a file it has already checked.
+   */
+  onSubmit: (product: ProductUpsert, picture?: File | null) => Promise<void>;
   onCancel?: () => void;
 }
+
+/** Mirrors the server's own list (`ImageStorageService.AllowedTypes`). */
+const ACCEPTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+
+/** Mirrors `Storage:MaxImageBytes`. */
+const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
 
 type Errors = Partial<Record<keyof ProductUpsert, string>>;
 
@@ -18,11 +30,6 @@ const EMPTY: ProductUpsert = {
   brandId: null,
   model: '',
   barcode: '',
-  costPrice: 0,
-  wholesalePrice: 0,
-  retailPrice: 0,
-  salePrice: 0,
-  quantityOnHand: 0,
   minStockThreshold: 0,
   supplierId: null,
 };
@@ -46,11 +53,6 @@ export function ProductForm({ initial, onSubmit, onCancel }: ProductFormProps) {
           brandId: initial.brandId ?? null,
           model: initial.model ?? '',
           barcode: initial.barcode ?? '',
-          costPrice: initial.costPrice ?? 0,
-          wholesalePrice: initial.wholesalePrice ?? 0,
-          retailPrice: initial.retailPrice ?? 0,
-          salePrice: initial.salePrice,
-          quantityOnHand: initial.quantityOnHand,
           minStockThreshold: initial.minStockThreshold ?? 0,
           supplierId: initial.supplierId ?? null,
         }
@@ -72,6 +74,36 @@ export function ProductForm({ initial, onSubmit, onCancel }: ProductFormProps) {
   const [errors, setErrors] = useState<Errors>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [picture, setPicture] = useState<File | null>(null);
+  const [pictureError, setPictureError] = useState<string | null>(null);
+
+  // Checked here as well as on the server: the shopkeeper finds out while still looking at the
+  // form, instead of after a save that stored the product but not its picture.
+  function choosePicture(file: File | null) {
+    if (!file) {
+      setPicture(null);
+      setPictureError(null);
+
+      return;
+    }
+
+    if (!ACCEPTED_IMAGE_TYPES.includes(file.type)) {
+      setPicture(null);
+      setPictureError('Only JPEG, PNG or WebP pictures can be used.');
+
+      return;
+    }
+
+    if (file.size > MAX_IMAGE_BYTES) {
+      setPicture(null);
+      setPictureError('That picture is too large. The limit is 2 MB.');
+
+      return;
+    }
+
+    setPicture(file);
+    setPictureError(null);
+  }
 
   function set<K extends keyof ProductUpsert>(key: K, value: ProductUpsert[K]) {
     setValues((current) => ({ ...current, [key]: value }));
@@ -84,16 +116,15 @@ export function ProductForm({ initial, onSubmit, onCancel }: ProductFormProps) {
       next.name = 'Product name is required.';
     }
 
+    if (!values.brandId) {
+      next.brandId = 'Brand is required. Use your local-goods brand for generic stock.';
+    }
+
     if (!values.categoryId) {
       next.categoryId = 'Category is required.';
     }
 
     const nonNegative: Array<[keyof ProductUpsert, string]> = [
-      ['costPrice', 'Cost price cannot be negative.'],
-      ['wholesalePrice', 'Wholesale price cannot be negative.'],
-      ['retailPrice', 'Retail price cannot be negative.'],
-      ['salePrice', 'Sale price cannot be negative.'],
-      ['quantityOnHand', 'Quantity cannot be negative.'],
       ['minStockThreshold', 'Minimum stock cannot be negative.'],
     ];
 
@@ -114,20 +145,22 @@ export function ProductForm({ initial, onSubmit, onCancel }: ProductFormProps) {
     event.preventDefault();
     setFormError(null);
 
-    if (!validate()) {
+    if (!validate() || pictureError) {
       return;
     }
 
     setIsSubmitting(true);
 
     try {
-      await onSubmit({
-        ...values,
-        name: values.name.trim(),
-        brandId: values.brandId ?? null,
-        model: values.model?.trim() || null,
-        barcode: values.barcode?.trim() || null,
-      });
+      await onSubmit(
+        {
+          ...values,
+          name: values.name.trim(),
+          model: values.model?.trim() || null,
+          barcode: values.barcode?.trim() || null,
+        },
+        picture,
+      );
     } catch (error) {
       if (error instanceof ApiError) {
         // Surface field-level messages the server flagged.
@@ -240,16 +273,26 @@ export function ProductForm({ initial, onSubmit, onCancel }: ProductFormProps) {
           onChange={(event) =>
             set('brandId', event.target.value ? Number(event.target.value) : null)
           }
+          aria-invalid={errors.brandId !== undefined}
+          aria-describedby={errors.brandId ? 'brandId-error' : undefined}
         >
-          {/* Unbranded generic stock is normal in this trade, so this stays optional. */}
-          <option value="">No brand</option>
+          {/* Required: the owner files goods with no well-known maker under a brand created for
+              them rather than leaving the field blank. */}
+          <option value="">Select a brand…</option>
           {brands.data?.items.map((brand) => (
             <option key={brand.id} value={brand.id}>
               {brand.name}
             </option>
           ))}
         </select>
-        <small className="field__hint">Maintained on the Brands screen.</small>
+        <small className="field__hint">
+          Maintained on the Brands screen. Generic stock goes under your local-goods brand.
+        </small>
+        {errors.brandId && (
+          <span id="brandId-error" className="field-error">
+            {errors.brandId}
+          </span>
+        )}
       </div>
 
       <div className="field">
@@ -266,18 +309,29 @@ export function ProductForm({ initial, onSubmit, onCancel }: ProductFormProps) {
         />
       </div>
 
-      {numberField('costPrice', 'Cost price', {
-        disabled: isEdit,
-        hint: isEdit ? 'Changes only when you record a purchase.' : undefined,
-      })}
-      {numberField('wholesalePrice', 'Wholesale price')}
-      {numberField('retailPrice', 'Retail price')}
-      {numberField('salePrice', 'Sale price')}
-      {numberField('quantityOnHand', 'Quantity in stock', {
-        disabled: isEdit,
-        hint: isEdit ? 'Use a stock adjustment to correct this.' : undefined,
-      })}
+      <div className="field">
+        <label htmlFor="picture">Picture</label>
+        <input
+          id="picture"
+          type="file"
+          accept={ACCEPTED_IMAGE_TYPES.join(',')}
+          onChange={(e) => choosePicture(e.target.files?.[0] ?? null)}
+        />
+        <p className="field__hint">
+          Optional. A photo makes look-alike stock easier to tell apart at the counter.
+        </p>
+        {pictureError ? <p className="field-error">{pictureError}</p> : null}
+      </div>
+
       {numberField('minStockThreshold', 'Reorder at')}
+
+      {/* Said plainly, because the prices the shopkeeper expects to type are genuinely not here.
+          Without this the form reads as unfinished rather than deliberate. */}
+      <p className="field__hint">
+        {isEdit
+          ? 'Prices and stock are set when you record a purchase, on the Purchases screen.'
+          : 'Next: record a purchase for this product. That is where its cost, selling prices and quantity are set — and what makes it ready to sell.'}
+      </p>
 
       <div className="form-actions">
         <button type="submit" disabled={isSubmitting}>

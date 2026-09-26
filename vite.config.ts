@@ -20,6 +20,13 @@ export default defineConfig({
         target: process.env.VITE_API_PROXY_TARGET ?? 'http://localhost:5080',
         changeOrigin: true,
       },
+      // Product pictures (feature 005) are served as static files, not under /api — without
+      // this, every thumbnail and full image 404s against the dev server itself and silently
+      // falls back to the placeholder, even for a product that really has a picture.
+      '/content': {
+        target: process.env.VITE_API_PROXY_TARGET ?? 'http://localhost:5080',
+        changeOrigin: true,
+      },
     },
   },
   test: {

@@ -95,7 +95,31 @@ export interface ExpenseReport {
 
 export type ReportGrouping = 'Day' | 'Week' | 'Month' | 'Year';
 
+/**
+ * One salesman's period. No cost and no profit: this answers "who took the money and who gave
+ * the discounts", which is what a short drawer needs alongside it.
+ */
+export interface UserSalesRow {
+  userId: number;
+  userName: string;
+  invoiceCount: number;
+  /** Net of returns — what the sales are worth today. */
+  totalSales: number;
+  /** What they actually took at the counter. */
+  cashTaken: number;
+  /** What they let leave on credit. */
+  creditGiven: number;
+  /** Line discounts plus whole-bill discounts. */
+  discountGiven: number;
+}
+
 export const reportApi = {
+  salesByUser(from: string, to: string): Promise<UserSalesRow[]> {
+    return unwrap(
+      api.get<ApiEnvelope<UserSalesRow[]>>('/reports/sales-by-user', { params: { from, to } }),
+    );
+  },
+
   sales(from: string, to: string, groupBy: ReportGrouping): Promise<PeriodTotals[]> {
     return unwrap(
       api.get<ApiEnvelope<PeriodTotals[]>>('/reports/sales', { params: { from, to, groupBy } }),

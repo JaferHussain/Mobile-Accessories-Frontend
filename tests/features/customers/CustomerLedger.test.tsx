@@ -14,6 +14,7 @@ const customer: Customer = {
   mobileNumber: '923001234567',
   outstandingBalance: 500,
   isActive: true,
+  saleType: 'Retail',
 };
 
 // The shop owner's worked example: bill 3,000 paid 1,000 -> 2,000; then paid 1,500 -> 500.

@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { supplierApi, type Supplier } from './supplierApi';
+import { supplierApi, type Supplier, type SupplierUpsert } from './supplierApi';
 import { QueryState } from '@/components/QueryState';
 import { formatPkr } from '@/lib/money';
 import { ApiError, ErrorCodes } from '@/types/api';
@@ -96,29 +96,58 @@ function PayModal({
   );
 }
 
+const EMPTY_SUPPLIER: SupplierUpsert = {
+  name: '',
+  contactNumber: '',
+  address: '',
+  cnic: '',
+  email: '',
+  bankName: '',
+  bankAccountNumber: '',
+  notes: '',
+};
+
 export function SuppliersPage() {
   const queryClient = useQueryClient();
 
-  const [name, setName] = useState('');
-  const [contactNumber, setContactNumber] = useState('');
+  // One object rather than a variable per box: there are eight of them now, and the form is
+  // filled, cleared and loaded-for-edit as a unit.
+  const [form, setForm] = useState<SupplierUpsert>(EMPTY_SUPPLIER);
+  const [editing, setEditing] = useState<Supplier | null>(null);
   const [paying, setPaying] = useState<Supplier | null>(null);
   const [createError, setCreateError] = useState<string | null>(null);
+
+  const set = (field: keyof SupplierUpsert, value: string) =>
+    setForm((current) => ({ ...current, [field]: value }));
 
   const { data, isPending, error } = useQuery({
     queryKey: ['suppliers'],
     queryFn: () => supplierApi.search(),
   });
 
-  const create = useMutation({
-    mutationFn: () => supplierApi.create(name.trim(), contactNumber.trim() || null),
+  const save = useMutation({
+    mutationFn: () => {
+      // An empty box means "not recorded", not "recorded as blank" — the difference matters
+      // when the owner later asks which suppliers still need their bank details.
+      const payload = Object.fromEntries(
+        Object.entries(form).map(([key, value]) => [
+          key,
+          typeof value === 'string' && value.trim() === '' ? null : value?.trim() ?? null,
+        ]),
+      ) as SupplierUpsert;
+
+      return editing
+        ? supplierApi.update(editing.id, payload)
+        : supplierApi.create(payload);
+    },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['suppliers'] });
-      setName('');
-      setContactNumber('');
+      setForm(EMPTY_SUPPLIER);
+      setEditing(null);
       setCreateError(null);
     },
     onError: (caught) =>
-      setCreateError(caught instanceof ApiError ? caught.message : 'Could not add the supplier.'),
+      setCreateError(caught instanceof ApiError ? caught.message : 'Could not save the supplier.'),
   });
 
   const pay = useMutation({
@@ -137,42 +166,124 @@ export function SuppliersPage() {
       </header>
 
       <form
-        className="inline-form"
+        className="supplier-form"
         onSubmit={(event) => {
           event.preventDefault();
 
-          if (!name.trim()) {
+          if (!form.name.trim()) {
             setCreateError('Supplier name is required.');
             return;
           }
 
-          create.mutate();
+          save.mutate();
         }}
         noValidate
       >
+        <h3>{editing ? `Edit ${editing.name}` : 'Add a supplier'}</h3>
+
+        <div className="supplier-form__group">
+          <div className="field">
+            <label htmlFor="supplierName">Supplier Name</label>
+            <input
+              id="supplierName"
+              value={form.name}
+              onChange={(event) => set('name', event.target.value)}
+            />
+          </div>
+
+          <div className="field">
+            <label htmlFor="supplierContact">Contact</label>
+            <input
+              id="supplierContact"
+              value={form.contactNumber ?? ''}
+              placeholder="03001234567"
+              onChange={(event) => set('contactNumber', event.target.value)}
+            />
+          </div>
+
+          <div className="field">
+            <label htmlFor="supplierEmail">Email</label>
+            <input
+              id="supplierEmail"
+              value={form.email ?? ''}
+              onChange={(event) => set('email', event.target.value)}
+            />
+          </div>
+
+          <div className="field">
+            <label htmlFor="supplierCnic">CNIC</label>
+            <input
+              id="supplierCnic"
+              value={form.cnic ?? ''}
+              placeholder="36603-1234567-1"
+              onChange={(event) => set('cnic', event.target.value)}
+            />
+          </div>
+
+          <div className="field">
+            <label htmlFor="supplierAddress">Address</label>
+            <input
+              id="supplierAddress"
+              value={form.address ?? ''}
+              onChange={(event) => set('address', event.target.value)}
+            />
+          </div>
+        </div>
+
+        {/* Grouped on purpose: whoever is paying an invoice reads these three together, and
+            hunting for them among the contact details is how the wrong account gets paid. */}
+        <fieldset className="supplier-form__payment">
+          <legend>Payment details</legend>
+
+          <div className="supplier-form__group">
+            <div className="field">
+              <label htmlFor="supplierBankName">Bank name</label>
+              <input
+                id="supplierBankName"
+                value={form.bankName ?? ''}
+                onChange={(event) => set('bankName', event.target.value)}
+              />
+            </div>
+
+            <div className="field">
+              <label htmlFor="supplierAccountNumber">Account number</label>
+              <input
+                id="supplierAccountNumber"
+                value={form.bankAccountNumber ?? ''}
+                placeholder="IBAN or account number"
+                onChange={(event) => set('bankAccountNumber', event.target.value)}
+              />
+            </div>
+          </div>
+        </fieldset>
+
         <div className="field">
-          <label htmlFor="supplierName">Add a supplier</label>
+          <label htmlFor="supplierNotes">Notes</label>
           <input
-            id="supplierName"
-            value={name}
-            placeholder="Name"
-            onChange={(event) => setName(event.target.value)}
+            id="supplierNotes"
+            value={form.notes ?? ''}
+            onChange={(event) => set('notes', event.target.value)}
           />
         </div>
 
-        <div className="field">
-          <label htmlFor="supplierContact">Contact</label>
-          <input
-            id="supplierContact"
-            value={contactNumber}
-            placeholder="03001234567"
-            onChange={(event) => setContactNumber(event.target.value)}
-          />
-        </div>
+        <div className="supplier-form__actions">
+          <button type="submit" disabled={save.isPending}>
+            {editing ? 'Save' : 'Add'}
+          </button>
 
-        <button type="submit" disabled={create.isPending}>
-          Add
-        </button>
+          {editing && (
+            <button
+              type="button"
+              onClick={() => {
+                setEditing(null);
+                setForm(EMPTY_SUPPLIER);
+                setCreateError(null);
+              }}
+            >
+              Cancel
+            </button>
+          )}
+        </div>
       </form>
 
       {createError && (
@@ -191,8 +302,9 @@ export function SuppliersPage() {
           <caption className="visually-hidden">Suppliers</caption>
           <thead>
             <tr>
-              <th scope="col">Name</th>
+              <th scope="col">Supplier Name</th>
               <th scope="col">Contact</th>
+              <th scope="col">Pay into</th>
               <th scope="col">You owe</th>
               <th scope="col">
                 <span className="visually-hidden">Actions</span>
@@ -204,6 +316,17 @@ export function SuppliersPage() {
               <tr key={supplier.id}>
                 <td>{supplier.name}</td>
                 <td>{supplier.contactNumber ?? '—'}</td>
+                <td>
+                  {supplier.bankName || supplier.bankAccountNumber ? (
+                    <>
+                      {supplier.bankName}
+                      {supplier.bankName && supplier.bankAccountNumber ? ' · ' : ''}
+                      {supplier.bankAccountNumber}
+                    </>
+                  ) : (
+                    '—'
+                  )}
+                </td>
                 <td className={`numeric${supplier.payableBalance > 0 ? ' owing' : ''}`}>
                   {formatPkr(supplier.payableBalance)}
                 </td>
@@ -214,6 +337,27 @@ export function SuppliersPage() {
                     onClick={() => setPaying(supplier)}
                   >
                     Pay
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      // Loads the whole record into the form, so a supplier recorded before
+                      // these fields existed can gain them later without being re-created.
+                      setEditing(supplier);
+                      setForm({
+                        name: supplier.name,
+                        contactNumber: supplier.contactNumber ?? '',
+                        address: supplier.address ?? '',
+                        cnic: supplier.cnic ?? '',
+                        email: supplier.email ?? '',
+                        bankName: supplier.bankName ?? '',
+                        bankAccountNumber: supplier.bankAccountNumber ?? '',
+                        notes: supplier.notes ?? '',
+                      });
+                      setCreateError(null);
+                    }}
+                  >
+                    Edit
                   </button>
                 </td>
               </tr>

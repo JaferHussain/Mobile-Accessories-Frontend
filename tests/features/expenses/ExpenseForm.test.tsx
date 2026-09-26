@@ -16,6 +16,16 @@ function renderForm(onSubmit = vi.fn().mockResolvedValue(undefined)) {
   return onSubmit;
 }
 
+/**
+ * Answers the "Paid from" question.
+ *
+ * The form refuses to save without it, so every test that reaches a submit has to answer it —
+ * which is the point of the field, not an inconvenience of testing it.
+ */
+async function choosePaidFrom(source: 'Till' | 'Bank' = 'Till') {
+  await userEvent.selectOptions(screen.getByLabelText(/paid from/i), source);
+}
+
 describe('ExpenseForm', () => {
   it('lists the categories', () => {
     renderForm();
@@ -74,6 +84,7 @@ describe('ExpenseForm', () => {
     fireEvent.change(screen.getByLabelText('Amount'), { target: { value: '12000' } });
     fireEvent.change(screen.getByLabelText('Date'), { target: { value: '2026-09-09' } });
     await user.type(screen.getByLabelText('Note'), 'September bill');
+    await choosePaidFrom();
     await user.click(screen.getByRole('button', { name: /save expense/i }));
 
     await waitFor(() =>
@@ -81,6 +92,7 @@ describe('ExpenseForm', () => {
         categoryId: 2,
         amount: 12000,
         expenseDate: '2026-09-09',
+        paymentSource: 'Till',
         note: 'September bill',
       }),
     );
@@ -91,6 +103,7 @@ describe('ExpenseForm', () => {
     const onSubmit = renderForm();
 
     fireEvent.change(screen.getByLabelText('Amount'), { target: { value: '500' } });
+    await choosePaidFrom();
     await user.click(screen.getByRole('button', { name: /save expense/i }));
 
     await waitFor(() =>
@@ -103,6 +116,7 @@ describe('ExpenseForm', () => {
     renderForm();
 
     fireEvent.change(screen.getByLabelText('Amount'), { target: { value: '500' } });
+    await choosePaidFrom();
     await user.click(screen.getByRole('button', { name: /save expense/i }));
 
     expect(await screen.findByRole('status')).toHaveTextContent('Expense saved.');
@@ -119,8 +133,75 @@ describe('ExpenseForm', () => {
     renderForm(onSubmit);
 
     fireEvent.change(screen.getByLabelText('Amount'), { target: { value: '500' } });
+    await choosePaidFrom();
     await user.click(screen.getByRole('button', { name: /save expense/i }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/was not found/i);
+  });
+});
+
+/**
+ * Where the money came from.
+ *
+ * <p>Until this field existed, every expense saved with no source — so the day's drawer count
+ * excluded all of them and "Cash paid out" read zero however much was taken out of the till. The
+ * drawer then looked short by exactly the amount that had legitimately left it.</p>
+ */
+describe('ExpenseForm payment source', () => {
+  it('asks where the money came from', () => {
+    renderForm();
+
+    expect(screen.getByLabelText(/paid from/i)).toBeInTheDocument();
+  });
+
+  it('starts unanswered rather than guessing at the till', async () => {
+    renderForm();
+
+    // Defaulting to Till would quietly put every bank payment into the drawer calculation.
+    expect(screen.getByLabelText(/paid from/i)).toHaveValue('');
+  });
+
+  it('refuses to save until it is answered', async () => {
+    const user = userEvent.setup();
+    const onSubmit = renderForm();
+
+    await user.clear(screen.getByLabelText(/amount/i));
+    await user.type(screen.getByLabelText(/amount/i), '300');
+    await user.click(screen.getByRole('button', { name: /save expense/i }));
+
+    expect(await screen.findByText(/paid from the till or the bank/i)).toBeInTheDocument();
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it('sends the answer with the expense', async () => {
+    const user = userEvent.setup();
+    const onSubmit = renderForm();
+
+    await user.clear(screen.getByLabelText(/amount/i));
+    await user.type(screen.getByLabelText(/amount/i), '300');
+    await user.selectOptions(screen.getByLabelText(/paid from/i), 'Till');
+    await user.click(screen.getByRole('button', { name: /save expense/i }));
+
+    await waitFor(() =>
+      expect(onSubmit).toHaveBeenCalledWith(
+        expect.objectContaining({ paymentSource: 'Till' }),
+      ),
+    );
+  });
+
+  it('offers the bank as the other answer', async () => {
+    const user = userEvent.setup();
+    const onSubmit = renderForm();
+
+    await user.clear(screen.getByLabelText(/amount/i));
+    await user.type(screen.getByLabelText(/amount/i), '300');
+    await user.selectOptions(screen.getByLabelText(/paid from/i), 'Bank');
+    await user.click(screen.getByRole('button', { name: /save expense/i }));
+
+    await waitFor(() =>
+      expect(onSubmit).toHaveBeenCalledWith(
+        expect.objectContaining({ paymentSource: 'Bank' }),
+      ),
+    );
   });
 });

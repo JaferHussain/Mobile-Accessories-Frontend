@@ -10,16 +10,22 @@ const lines: ReturnableLine[] = [
   {
     invoiceItemId: 11,
     productName: 'Type-C Braided 2m',
-    quantity: 3,
-    returnedQty: 1,
+    quantitySold: 3,
+    quantityReturned: 1,
+    quantityAvailable: 2,
     unitSalePrice: 1100,
+    refundPerUnit: 1100,
+    discountPerUnit: 0,
   },
   {
     invoiceItemId: 12,
     productName: 'Earbuds Pro',
-    quantity: 1,
-    returnedQty: 1,
+    quantitySold: 1,
+    quantityReturned: 1,
+    quantityAvailable: 0,
     unitSalePrice: 2500,
+    refundPerUnit: 2500,
+    discountPerUnit: 0,
   },
 ];
 
@@ -90,6 +96,97 @@ describe('SaleReturnForm', () => {
     setQty('Type-C Braided 2m', '2');
 
     expect(screen.getByTestId('return-total')).toHaveTextContent('Rs 2,200.00');
+  });
+});
+
+/**
+ * A discounted sale. The line was billed at 600 a unit but the invoice was discounted by 10, so
+ * the customer paid 590 — and 590 is what comes back. Pricing this form at the billed 600 is
+ * what made a full return look like it exceeded the invoice's own value.
+ */
+describe('SaleReturnForm on a discounted sale', () => {
+  const discounted: ReturnableLine[] = [
+    {
+      invoiceItemId: 21,
+      productName: 'Charger 18W QC3.0',
+      quantitySold: 1,
+      quantityReturned: 0,
+      quantityAvailable: 1,
+      unitSalePrice: 600,
+      refundPerUnit: 575,
+      discountPerUnit: 25,
+    },
+  ];
+
+  const renderDiscounted = (amountRemaining = 575) =>
+    render(
+      <SaleReturnForm
+        invoiceNumber="INV-2026-000002"
+        amountRemaining={amountRemaining}
+        lines={discounted}
+        onSubmit={vi.fn().mockResolvedValue(undefined)}
+      />,
+    );
+
+  it('refunds what was paid, not what was billed', () => {
+    renderDiscounted();
+
+    setQty('Charger 18W QC3.0', '1');
+
+    expect(screen.getByTestId('return-total')).toHaveTextContent('Rs 575.00');
+    expect(screen.getByTestId('line-amount-21')).toHaveTextContent('Rs 575.00');
+  });
+
+  it('never exceeds the invoice, so the whole sale settles to nothing', () => {
+    renderDiscounted();
+
+    setQty('Charger 18W QC3.0', '1');
+
+    expect(screen.getByTestId('reduces-balance')).toHaveTextContent('Rs 575.00');
+    expect(screen.getByTestId('refund-due')).toHaveTextContent('Rs 0.00');
+  });
+
+  it('gives the discount its own column, per unit', () => {
+    renderDiscounted();
+
+    expect(screen.getByTestId('line-discount-21')).toHaveTextContent('Rs 25.00');
+
+    const row = screen.getByText('Charger 18W QC3.0').closest('tr')!;
+
+    expect(row).toHaveTextContent('Rs 600.00');
+    expect(row).toHaveTextContent('Rs 575.00');
+  });
+
+  it('spells the adjustment out: item value, discount, value returned', () => {
+    renderDiscounted();
+
+    setQty('Charger 18W QC3.0', '1');
+
+    expect(screen.getByTestId('billed-total')).toHaveTextContent('Rs 600.00');
+    expect(screen.getByTestId('discount-total')).toHaveTextContent('Rs 25.00');
+    expect(screen.getByTestId('return-total')).toHaveTextContent('Rs 575.00');
+  });
+
+  it('tells the salesman what to say to the customer', () => {
+    renderDiscounted();
+
+    setQty('Charger 18W QC3.0', '1');
+
+    const note = screen.getByTestId('discount-note');
+
+    expect(note).toHaveTextContent(/this item is Rs 600\.00/i);
+    expect(note).toHaveTextContent(/Rs 25\.00 discount was given/i);
+    expect(note).toHaveTextContent(/Rs 575\.00 is adjusted/i);
+  });
+
+  it('says nothing about a discount when none was given', () => {
+    renderForm();
+
+    setQty('Type-C Braided 2m', '1');
+
+    expect(screen.queryByTestId('discount-total')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('discount-note')).not.toBeInTheDocument();
+    expect(screen.getByTestId('line-discount-11')).toHaveTextContent('—');
   });
 });
 

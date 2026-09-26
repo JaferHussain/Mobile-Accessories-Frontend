@@ -43,14 +43,24 @@ const savedInvoice: CreateInvoiceResult = {
 };
 
 function setup(overrides: Partial<Parameters<typeof PosScreen>[0]> = {}) {
+  // Feature 005: a lookup now reports HOW it matched. A digits-only term is treated as a
+  // scanned barcode and still goes straight into the cart; anything typed comes back as
+  // candidates for the salesman to pick from.
   const onFindProduct = vi.fn(async (term: string) => {
-    if (term.includes('earbud') || term === '2') return earbuds;
-    if (term === 'nothing') return null;
-    return cable;
+    if (term === 'nothing') return { kind: 'matches' as const, products: [] };
+
+    const product = term.includes('earbud') || term === '2' ? earbuds : cable;
+
+    return /^\d+$/.test(term)
+      ? { kind: 'barcode' as const, product }
+      : { kind: 'matches' as const, products: [product] };
   });
 
   const onSave = vi.fn().mockResolvedValue(savedInvoice);
   const onCreateCustomer = vi.fn().mockResolvedValue({ id: 5, name: 'Bilal' });
+  const onSearchCustomers = vi.fn().mockResolvedValue([
+    { id: 5, name: 'Bilal Traders', mobileNumber: '03001234567', outstandingBalance: 0 },
+  ]);
 
   // Wholesale is priced 100 below the counter price for every product in these tests.
   const onRepriceProduct = vi.fn(async (productId: number, saleType: string) => {
@@ -65,18 +75,34 @@ function setup(overrides: Partial<Parameters<typeof PosScreen>[0]> = {}) {
       onRepriceProduct={onRepriceProduct}
       onSave={onSave}
       onCreateCustomer={onCreateCustomer}
+      onSearchCustomers={onSearchCustomers}
       canSellOnCredit
       {...overrides}
     />,
   );
 
-  return { onFindProduct, onSave, onCreateCustomer, onRepriceProduct };
+  return { onFindProduct, onSave, onCreateCustomer, onSearchCustomers, onRepriceProduct };
+}
+
+/**
+ * Completing a sale, which is now two deliberate steps: the counter hands over to the checkout
+ * modal, and the modal is where who-is-paying-and-how is settled.
+ */
+async function completeSale(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole('button', { name: /proceed to sale/i }));
+  await user.click(await screen.findByRole('button', { name: /complete sale/i }));
 }
 
 async function addCable(user: ReturnType<typeof userEvent.setup>) {
   await user.type(screen.getByLabelText(/scan or search/i), 'cable');
-  await user.click(screen.getByRole('button', { name: 'Add' }));
-  await screen.findByText('Type-C Braided 2m');
+  await user.click(screen.getByRole('button', { name: 'Search' }));
+
+  // One extra click, deliberately: a typed search offers candidates rather than taking the
+  // first one (FR-012).
+  const result = await screen.findByTestId(`pos-result-${cable.id}`);
+  await user.click(within(result).getByRole('button', { name: 'Add' }));
+
+  await screen.findByTestId(`cart-line-${cable.id}`);
 }
 
 const setNumber = (label: string | RegExp, value: string) =>
@@ -131,7 +157,7 @@ describe('PosScreen cart', () => {
     setup();
 
     await user.type(screen.getByLabelText(/scan or search/i), 'nothing');
-    await user.click(screen.getByRole('button', { name: 'Add' }));
+    await user.click(screen.getByRole('button', { name: 'Search' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/no product found/i);
   });
@@ -163,9 +189,12 @@ describe('PosScreen cart', () => {
 
     await addCable(user);
     await user.type(screen.getByLabelText(/scan or search/i), 'earbud');
-    await user.click(screen.getByRole('button', { name: 'Add' }));
+    await user.click(screen.getByRole('button', { name: 'Search' }));
 
-    await screen.findByText('Earbuds Pro');
+    const result = await screen.findByTestId(`pos-result-${earbuds.id}`);
+    await user.click(within(result).getByRole('button', { name: 'Add' }));
+
+    await screen.findByTestId(`cart-line-${earbuds.id}`);
     expect(screen.getByTestId('total')).toHaveTextContent('Rs 3,600.00');
   });
 });
@@ -218,93 +247,45 @@ describe('PosScreen discounts', () => {
   });
 });
 
-describe('PosScreen payment methods', () => {
-  it('treats cash as fully paid', async () => {
-    const user = userEvent.setup();
-    setup();
-
-    await addCable(user);
-
-    expect(screen.getByTestId('paid')).toHaveTextContent('Rs 1,100.00');
-    expect(screen.getByTestId('remaining')).toHaveTextContent('Rs 0.00');
-  });
-
-  it('treats credit as nothing paid', async () => {
-    const user = userEvent.setup();
-    setup();
-
-    await addCable(user);
-    await user.selectOptions(screen.getByLabelText('Payment'), 'Credit');
-
-    expect(screen.getByTestId('paid')).toHaveTextContent('Rs 0.00');
-    expect(screen.getByTestId('remaining')).toHaveTextContent('Rs 1,100.00');
-  });
-
-  it('asks how much was paid only for a partial payment', async () => {
-    const user = userEvent.setup();
-    setup();
-
-    await addCable(user);
-    expect(screen.queryByLabelText(/amount paid now/i)).not.toBeInTheDocument();
-
-    await user.selectOptions(screen.getByLabelText('Payment'), 'Partial');
-    expect(screen.getByLabelText(/amount paid now/i)).toBeInTheDocument();
-  });
-
-  it('computes the balance on a partial payment', async () => {
-    const user = userEvent.setup();
-    setup();
-
-    await addCable(user);
-    setNumber('Price for Type-C Braided 2m', '3000');
-    await user.selectOptions(screen.getByLabelText('Payment'), 'Partial');
-    setNumber(/amount paid now/i, '1000');
-
-    // spec US2 scenario 1.
-    expect(screen.getByTestId('remaining')).toHaveTextContent('Rs 2,000.00');
-  });
-
-  it('does not let a partial payment exceed the total', async () => {
-    const user = userEvent.setup();
-    setup();
-
-    await addCable(user);
-    await user.selectOptions(screen.getByLabelText('Payment'), 'Partial');
-    setNumber(/amount paid now/i, '99999');
-
-    expect(screen.getByTestId('paid')).toHaveTextContent('Rs 1,100.00');
-    expect(screen.getByTestId('remaining')).toHaveTextContent('Rs 0.00');
-  });
-
-  it('switching from credit back to cash settles the bill again', async () => {
-    const user = userEvent.setup();
-    setup();
-
-    await addCable(user);
-    await user.selectOptions(screen.getByLabelText('Payment'), 'Credit');
-    await user.selectOptions(screen.getByLabelText('Payment'), 'Cash');
-
-    expect(screen.getByTestId('remaining')).toHaveTextContent('Rs 0.00');
-  });
-});
-
 describe('PosScreen saving', () => {
-  it('saves a cash sale', async () => {
+  it('saves a cash sale through the checkout', async () => {
     const user = userEvent.setup();
     const { onSave } = setup();
 
     await addCable(user);
-    await user.click(screen.getByRole('button', { name: /save sale/i }));
+    await completeSale(user);
 
     await waitFor(() =>
-      expect(onSave).toHaveBeenCalledWith(
-        expect.objectContaining({
-          amountPaid: 1100,
-          paymentMethod: 'Cash',
-          customerId: null,
-          items: [expect.objectContaining({ productId: 1, quantity: 1, unitSalePrice: 1100 })],
-        }),
-      ),
+      expect(onSave).toHaveBeenCalledWith({
+        customerId: null,
+        orderDiscount: 0,
+        amountPaid: cable.salePrice,
+        paymentMethod: 'Cash',
+        paymentAccountNumber: null,
+        paymentTransactionId: null,
+        saleType: 'Retail',
+        items: [
+          {
+            productId: cable.id,
+            quantity: 1,
+            unitSalePrice: cable.salePrice,
+            lineDiscount: 0,
+          },
+        ],
+      }),
+    );
+  });
+
+  it('sends the whole-bill discount with the sale', async () => {
+    const user = userEvent.setup();
+    const { onSave } = setup();
+
+    await addCable(user);
+    fireEvent.change(screen.getByLabelText(/whole-bill discount/i), { target: { value: '100' } });
+    await completeSale(user);
+
+    await waitFor(() =>
+      expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ orderDiscount: 100 })),
     );
   });
 
@@ -313,110 +294,32 @@ describe('PosScreen saving', () => {
     setup();
 
     await addCable(user);
-    await user.click(screen.getByRole('button', { name: /save sale/i }));
+    await completeSale(user);
 
-    expect(await screen.findByRole('status')).toHaveTextContent('INV-2026-000010');
+    expect(await screen.findByText(/saved INV-2026-000010/i)).toBeInTheDocument();
     expect(screen.getByText(/no items yet/i)).toBeInTheDocument();
   });
 
-  it('shows the server message when the sale is refused', async () => {
+  it('keeps the cart when the server refuses the sale', async () => {
+    const user = userEvent.setup();
     const onSave = vi
       .fn()
-      .mockRejectedValue(
-        new ApiError('INSUFFICIENT_STOCK', 'Not enough stock for Type-C Braided 2m.', 400),
-      );
+      .mockRejectedValue(new ApiError('INSUFFICIENT_STOCK', 'Only 2 left in stock.', 409));
 
-    const user = userEvent.setup();
     setup({ onSave });
 
     await addCable(user);
-    await user.click(screen.getByRole('button', { name: /save sale/i }));
+    await completeSale(user);
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(/not enough stock/i);
-    // The cart survives so the shopkeeper can fix the quantity.
-    expect(screen.getByText('Type-C Braided 2m')).toBeInTheDocument();
+    // The refusal is shown where it can be acted on, and nothing is lost.
+    expect(await screen.findByRole('alert')).toHaveTextContent(/only 2 left/i);
+    expect(screen.getByTestId(`cart-line-${cable.id}`)).toBeInTheDocument();
   });
 
-  it('cannot be saved with an empty cart', () => {
+  it('cannot be sold with an empty cart', () => {
     setup();
 
-    expect(screen.getByRole('button', { name: /save sale/i })).toBeDisabled();
-  });
-});
-
-describe('PosScreen customer requirement', () => {
-  it('asks for a customer when the sale leaves a balance', async () => {
-    const user = userEvent.setup();
-    const { onSave } = setup();
-
-    await addCable(user);
-    await user.selectOptions(screen.getByLabelText('Payment'), 'Credit');
-    await user.click(screen.getByRole('button', { name: /save sale/i }));
-
-    // FR-017: a sale that is not fully paid needs someone to owe it.
-    expect(await screen.findByRole('dialog')).toBeInTheDocument();
-    expect(screen.getByText(/leaves a balance owing/i)).toBeInTheDocument();
-    expect(onSave).not.toHaveBeenCalled();
-  });
-
-  it('does not ask for a customer on a fully paid sale', async () => {
-    const user = userEvent.setup();
-    setup();
-
-    await addCable(user);
-    await user.click(screen.getByRole('button', { name: /save sale/i }));
-
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-  });
-
-  it('creates the customer inline and then saves the sale', async () => {
-    const user = userEvent.setup();
-    const { onSave, onCreateCustomer } = setup();
-
-    await addCable(user);
-    await user.selectOptions(screen.getByLabelText('Payment'), 'Credit');
-    await user.click(screen.getByRole('button', { name: /save sale/i }));
-
-    await user.type(await screen.findByLabelText('Name'), 'Bilal');
-    await user.type(screen.getByLabelText(/mobile number/i), '03001234567');
-    await user.click(screen.getByRole('button', { name: /save customer/i }));
-
-    await waitFor(() => expect(onCreateCustomer).toHaveBeenCalledWith('Bilal', '03001234567'));
-    expect(await screen.findByText(/customer: bilal/i)).toBeInTheDocument();
-
-    await user.click(screen.getByRole('button', { name: /save sale/i }));
-
-    await waitFor(() =>
-      expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ customerId: 5, amountPaid: 0 })),
-    );
-  });
-
-  it('requires a name in the quick-create form', async () => {
-    const user = userEvent.setup();
-    const { onCreateCustomer } = setup();
-
-    await addCable(user);
-    await user.selectOptions(screen.getByLabelText('Payment'), 'Credit');
-    await user.click(screen.getByRole('button', { name: /save sale/i }));
-
-    await user.click(await screen.findByRole('button', { name: /save customer/i }));
-
-    expect(await screen.findByText('Customer name is required.')).toBeInTheDocument();
-    expect(onCreateCustomer).not.toHaveBeenCalled();
-  });
-
-  it('can be cancelled', async () => {
-    const user = userEvent.setup();
-    setup();
-
-    await addCable(user);
-    await user.selectOptions(screen.getByLabelText('Payment'), 'Credit');
-    await user.click(screen.getByRole('button', { name: /save sale/i }));
-
-    await user.click(await screen.findByRole('button', { name: /cancel/i }));
-
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-    expect(screen.getByText('Type-C Braided 2m')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /proceed to sale/i })).toBeDisabled();
   });
 });
 
@@ -429,7 +332,7 @@ describe('PosScreen sale type', () => {
 
     expect(screen.getByRole('radio', { name: 'Retail' })).toBeChecked();
 
-    await user.click(screen.getByRole('button', { name: /save sale/i }));
+    await completeSale(user);
 
     // The counter is the normal case, so an untouched toggle must not misfile the sale.
     await waitFor(() =>
@@ -443,7 +346,7 @@ describe('PosScreen sale type', () => {
 
     await addCable(user);
     await user.click(screen.getByRole('radio', { name: 'Wholesale' }));
-    await user.click(screen.getByRole('button', { name: /save sale/i }));
+    await completeSale(user);
 
     await waitFor(() =>
       expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ saleType: 'Wholesale' })),
@@ -471,7 +374,7 @@ describe('PosScreen sale type', () => {
 
     await waitFor(() => expect(onRepriceProduct).toHaveBeenCalledWith(cable.id, 'Wholesale'));
 
-    await user.click(screen.getByRole('button', { name: /save sale/i }));
+    await completeSale(user);
 
     await waitFor(() =>
       expect(onSave).toHaveBeenCalledWith(
@@ -491,7 +394,7 @@ describe('PosScreen sale type', () => {
     await user.click(screen.getByRole('radio', { name: 'Wholesale' }));
     await user.click(screen.getByRole('radio', { name: 'Retail' }));
 
-    await user.click(screen.getByRole('button', { name: /save sale/i }));
+    await completeSale(user);
 
     await waitFor(() =>
       expect(onSave).toHaveBeenCalledWith(
@@ -511,7 +414,7 @@ describe('PosScreen sale type', () => {
     await addCable(user);
     await user.click(screen.getByRole('radio', { name: 'Wholesale' }));
 
-    await user.click(screen.getByRole('button', { name: /save sale/i }));
+    await completeSale(user);
 
     // Falling back to zero would sell the goods for nothing. The old price is the safe answer.
     await waitFor(() =>
@@ -525,62 +428,73 @@ describe('PosScreen sale type', () => {
 });
 
 describe('PosScreen credit controls', () => {
-  it('offers credit and part payment to the owner', async () => {
-    const user = userEvent.setup();
-    setup({ canSellOnCredit: true });
-
-    await addCable(user);
-
-    const payment = screen.getByLabelText('Payment');
-
-    expect(within(payment).getByRole('option', { name: /credit \(udhaar\)/i })).toBeInTheDocument();
-    expect(within(payment).getByRole('option', { name: /part paid/i })).toBeInTheDocument();
-  });
-
-  it('offers neither to a salesman', async () => {
-    const user = userEvent.setup();
-    setup({ canSellOnCredit: false });
-
-    await addCable(user);
-
-    const payment = screen.getByLabelText('Payment');
-
-    // FR-056: the salesman finds out the rule before scanning a cart, not after.
-    expect(within(payment).queryByRole('option', { name: /credit \(udhaar\)/i })).not.toBeInTheDocument();
-    expect(within(payment).queryByRole('option', { name: /part paid/i })).not.toBeInTheDocument();
-  });
-
-  it('tells the salesman why the options are missing', async () => {
-    const user = userEvent.setup();
-    setup({ canSellOnCredit: false });
-
-    await addCable(user);
-
-    // Absence with no explanation reads as a broken screen.
-    expect(screen.getByText(/only the owner can approve udhaar/i)).toBeInTheDocument();
-  });
-
-  it('does not nag the owner with that note', async () => {
-    const user = userEvent.setup();
-    setup({ canSellOnCredit: true });
-
-    await addCable(user);
-
-    expect(screen.queryByText(/only the owner can approve udhaar/i)).not.toBeInTheDocument();
-  });
-
   it('always sends the full total as paid for a salesman', async () => {
     const user = userEvent.setup();
     const { onSave } = setup({ canSellOnCredit: false });
 
     await addCable(user);
-    await user.click(screen.getByRole('button', { name: /save sale/i }));
+    await completeSale(user);
 
-    // Nothing on screen lets a salesman compose a sale that leaves money outstanding.
+    // Nothing offered to a salesman composes a sale that leaves money outstanding. The server
+    // refuses it regardless of what arrives (FR-051).
     await waitFor(() =>
       expect(onSave).toHaveBeenCalledWith(
         expect.objectContaining({ amountPaid: cable.salePrice }),
       ),
     );
+  });
+});
+
+/**
+ * After a sale is saved, the counter must be ready for the next customer.
+ *
+ * The screen once emptied the cart on success, which disabled the Save button and left a green
+ * banner sitting above it — a success message over a dead control, which read as frozen. Then it
+ * gained an explicit "New sale" button, which fixed the dead end but put a click (and a picture
+ * picker) between the salesman and their next customer. It now resets instantly, and only a
+ * non-cash sale keeps a banner, because that one still has something to do.
+ *
+ * The fading and the persisting are asserted in PosReceipt.test.tsx; what matters here is that
+ * the counter is usable again with no intervention at all.
+ */
+describe('PosScreen after a sale is saved', () => {
+  async function sellAndSave(user: ReturnType<typeof userEvent.setup>) {
+    await addCable(user);
+    await completeSale(user);
+    await screen.findByText(/saved INV-2026-000010/i);
+  }
+
+  it('clears the cart and the money from the sale just saved', async () => {
+    const user = userEvent.setup();
+    setup();
+
+    await sellAndSave(user);
+
+    expect(screen.getByText(/no items yet/i)).toBeInTheDocument();
+    expect(screen.getByTestId('total')).toHaveTextContent('Rs 0.00');
+  });
+
+  it('is ready to sell again with no click in between', async () => {
+    const user = userEvent.setup();
+    const { onSave } = setup();
+
+    await sellAndSave(user);
+
+    // No dismissing, no "New sale" — straight into the next customer.
+    await addCable(user);
+    await completeSale(user);
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(2));
+  });
+
+  it('explains why Save is unavailable rather than looking broken', async () => {
+    const user = userEvent.setup();
+    setup();
+
+    await sellAndSave(user);
+
+    // A disabled button with no reason beside it is what made this screen feel stuck.
+    expect(screen.getByRole('button', { name: /proceed to sale/i })).toBeDisabled();
+    expect(screen.getByTestId('save-hint')).toHaveTextContent(/scan or search/i);
   });
 });

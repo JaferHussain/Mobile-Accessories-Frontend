@@ -65,6 +65,7 @@ export function ExpensesPage() {
               <th scope="col">Date</th>
               <th scope="col">Category</th>
               <th scope="col">Amount</th>
+              <th scope="col">Paid from</th>
               <th scope="col">Note</th>
               <th scope="col">
                 <span className="visually-hidden">Actions</span>
@@ -81,6 +82,9 @@ export function ExpensesPage() {
                 </td>
                 <td>{expense.categoryName}</td>
                 <td className="numeric">{formatPkr(expense.amount)}</td>
+                {/* Dashes on rows recorded before this was asked for. Those are excluded from
+                    the day's drawer count rather than guessed at. */}
+                <td>{expense.paymentSource === 'Till' ? 'Till (cash)' : (expense.paymentSource ?? '—')}</td>
                 <td>{expense.note ?? '—'}</td>
                 <td>
                   <button

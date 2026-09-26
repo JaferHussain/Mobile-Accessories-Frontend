@@ -1,9 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { PurchaseForm, type PurchaseFormValues } from './PurchaseForm';
-import { productApi, type Product } from '@/features/products/productApi';
+import { ProductForm } from '@/features/products/ProductForm';
+import { productApi, type Product, type ProductUpsert } from '@/features/products/productApi';
 import { purchaseApi, supplierApi } from '@/features/suppliers/supplierApi';
 import { QueryState } from '@/components/QueryState';
+import { isTooShortSearch } from '@/lib/searchTerms';
 import { formatPkr } from '@/lib/money';
 
 export function PurchasesPage() {
@@ -11,14 +13,48 @@ export function PurchasesPage() {
 
   const [productSearch, setProductSearch] = useState('');
   const [selected, setSelected] = useState<Product | null>(null);
+  const [isCreatingProduct, setIsCreatingProduct] = useState(false);
   const [confirmation, setConfirmation] = useState<string | null>(null);
+
+  // Buying stock the shop has never sold before used to dead-end at "No products match": the
+  // owner had to leave for the Products screen and come back. Created here, the product drops
+  // straight into the purchase that prompted it.
+  const createProduct = useMutation({
+    mutationFn: async ({ product, picture }: { product: ProductUpsert; picture?: File | null }) => {
+      const saved = await productApi.create(product);
+
+      if (picture) {
+        await productApi.uploadImage(saved.id, picture);
+      }
+
+      return saved;
+    },
+    onSuccess: async (product) => {
+      await queryClient.invalidateQueries({ queryKey: ['products'] });
+
+      setIsCreatingProduct(false);
+      setSelected(product);
+    },
+  });
 
   const suppliers = useQuery({ queryKey: ['suppliers'], queryFn: () => supplierApi.search() });
 
+  // The server refuses a search made only of one-letter words (FR-079). Sending it anyway
+  // produced a 400 here and, worse, buried the "create a new product" offer behind an error —
+  // precisely when the owner is trying to buy something that does not exist yet.
+  const searchTooShort = isTooShortSearch(productSearch);
+  const [appliedSearch, setAppliedSearch] = useState('');
+
+  useEffect(() => {
+    if (!searchTooShort) {
+      setAppliedSearch(productSearch);
+    }
+  }, [productSearch, searchTooShort]);
+
   const products = useQuery({
-    queryKey: ['products', productSearch],
-    queryFn: () => productApi.search({ search: productSearch || undefined, pageSize: 25 }),
-    enabled: productSearch.length > 0,
+    queryKey: ['products', appliedSearch],
+    queryFn: () => productApi.search({ search: appliedSearch || undefined, pageSize: 25 }),
+    enabled: appliedSearch.length > 0,
   });
 
   const purchases = useQuery({ queryKey: ['purchases'], queryFn: () => purchaseApi.search() });
@@ -54,7 +90,27 @@ export function PurchasesPage() {
         </p>
       )}
 
-      {selected && suppliers.data ? (
+      {isCreatingProduct ? (
+        <>
+          <button
+            type="button"
+            className="link-button"
+            onClick={() => setIsCreatingProduct(false)}
+          >
+            ← Back to the search
+          </button>
+
+          {/* The Products screen's own form, not a copy of it: same fields, same validation,
+              same optional picture. A simplified second form here would drift the moment
+              either one changed. */}
+          <ProductForm
+            onSubmit={async (product, picture) => {
+              await createProduct.mutateAsync({ product, picture });
+            }}
+            onCancel={() => setIsCreatingProduct(false)}
+          />
+        </>
+      ) : selected && suppliers.data ? (
         <>
           <button type="button" className="link-button" onClick={() => setSelected(null)}>
             ← Choose a different product
@@ -79,6 +135,9 @@ export function PurchasesPage() {
                 placeholder="Search by name, brand or barcode"
                 onChange={(event) => setProductSearch(event.target.value)}
               />
+              {searchTooShort && (
+                <small className="field__hint">Type at least 2 letters to search.</small>
+              )}
             </div>
           </div>
 
@@ -88,11 +147,25 @@ export function PurchasesPage() {
             </p>
           )}
 
-          {productSearch && (
+          {appliedSearch && !searchTooShort && (
+            <>
+            {products.data?.items.length === 0 && (
+              <p className="pick-list__none">
+                No products match that search.{' '}
+                <button
+                  type="button"
+                  className="link-button"
+                  onClick={() => setIsCreatingProduct(true)}
+                >
+                  Create a new product
+                </button>
+              </p>
+            )}
+
             <QueryState
               isLoading={products.isPending}
               error={products.error}
-              isEmpty={products.data?.items.length === 0}
+              isEmpty={false}
               emptyMessage="No products match that search."
             >
               <ul className="pick-list">
@@ -109,6 +182,7 @@ export function PurchasesPage() {
                 ))}
               </ul>
             </QueryState>
+            </>
           )}
         </>
       )}
@@ -126,6 +200,7 @@ export function PurchasesPage() {
           <thead>
             <tr>
               <th scope="col">Date</th>
+              <th scope="col">Supplier</th>
               <th scope="col">Qty</th>
               <th scope="col">Unit cost</th>
               <th scope="col">Total</th>
@@ -136,6 +211,9 @@ export function PurchasesPage() {
             {purchases.data?.items.map((purchase) => (
               <tr key={purchase.id}>
                 <td>{new Date(purchase.purchaseDateUtc).toLocaleDateString('en-PK')}</td>
+                <td>
+                  {suppliers.data?.items.find((s) => s.id === purchase.supplierId)?.name ?? '—'}
+                </td>
                 <td className="numeric">{purchase.quantity}</td>
                 <td className="numeric">{formatPkr(purchase.unitCost)}</td>
                 <td className="numeric">{formatPkr(purchase.total)}</td>

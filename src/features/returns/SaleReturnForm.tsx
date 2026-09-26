@@ -5,9 +5,20 @@ import { ApiError } from '@/types/api';
 export interface ReturnableLine {
   invoiceItemId: number;
   productName: string;
-  quantity: number;
-  returnedQty: number;
+  quantitySold: number;
+  quantityReturned: number;
+  quantityAvailable: number;
+  /** What was billed per unit, before any discount — shown for context only. */
   unitSalePrice: number;
+  /**
+   * What one unit is worth back: the billed price less this line's share of the invoice's
+   * discount. Every figure on this form is built from THIS, because it is what the server
+   * refunds — pricing the form at unitSalePrice is what produced "returning 600 exceeds the
+   * invoice's remaining value of 590" on a sale the customer only ever paid 590 for.
+   */
+  refundPerUnit: number;
+  /** Billed price less refund price. Zero on an undiscounted sale, and then hidden. */
+  discountPerUnit: number;
 }
 
 export interface SaleReturnFormProps {
@@ -35,10 +46,17 @@ export function SaleReturnForm({
   const [formError, setFormError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
-  const returnable = (line: ReturnableLine) => Math.max(0, line.quantity - line.returnedQty);
+  const returnable = (line: ReturnableLine) => Math.max(0, line.quantityAvailable);
 
   const totals = useMemo(() => {
     const total = lines.reduce((sum, line) => {
+      const qty = quantities[line.invoiceItemId] ?? 0;
+      return sum + line.refundPerUnit * qty;
+    }, 0);
+
+    // What the goods were listed at, and the adjustment between that and the refund. Both are
+    // shown: the shopkeeper tells the customer "600 item, 25 discount, so 575 back".
+    const billed = lines.reduce((sum, line) => {
       const qty = quantities[line.invoiceItemId] ?? 0;
       return sum + line.unitSalePrice * qty;
     }, 0);
@@ -49,6 +67,8 @@ export function SaleReturnForm({
     const reducesBalance = Math.min(rounded, amountRemaining);
 
     return {
+      billed: roundMoney(billed),
+      discount: roundMoney(billed - total),
       total: rounded,
       reducesBalance: roundMoney(reducesBalance),
       refundDue: roundMoney(rounded - reducesBalance),
@@ -109,18 +129,33 @@ export function SaleReturnForm({
             <th scope="col">Product</th>
             <th scope="col">Sold</th>
             <th scope="col">Already returned</th>
+            <th scope="col">Price</th>
+            <th scope="col">Discount</th>
+            <th scope="col">Refund per unit</th>
             <th scope="col">Return now</th>
+            <th scope="col">Amount</th>
           </tr>
         </thead>
         <tbody>
           {lines.map((line) => {
             const max = returnable(line);
+            const qty = quantities[line.invoiceItemId] ?? 0;
 
             return (
               <tr key={line.invoiceItemId}>
                 <td>{line.productName}</td>
-                <td>{line.quantity}</td>
-                <td>{line.returnedQty}</td>
+                <td>{line.quantitySold}</td>
+                <td>{line.quantityReturned}</td>
+                {/* Price, discount and refund each get their own column: the shopkeeper reads
+                    the adjustment off the row and explains it, rather than wondering why the
+                    refund differs from the price on the receipt. */}
+                <td className="numeric">{formatPkr(line.unitSalePrice)}</td>
+                <td className="numeric" data-testid={`line-discount-${line.invoiceItemId}`}>
+                  {line.discountPerUnit > 0 ? `− ${formatPkr(line.discountPerUnit)}` : '—'}
+                </td>
+                <td className="numeric">
+                  <strong>{formatPkr(line.refundPerUnit)}</strong>
+                </td>
                 <td>
                   <input
                     type="number"
@@ -133,6 +168,9 @@ export function SaleReturnForm({
                     onChange={(event) => setQuantity(line, Number(event.target.value))}
                   />
                   {max === 0 && <small className="field__hint">Fully returned</small>}
+                </td>
+                <td className="numeric" data-testid={`line-amount-${line.invoiceItemId}`}>
+                  {formatPkr(roundMoney(line.refundPerUnit * qty))}
                 </td>
               </tr>
             );
@@ -151,6 +189,18 @@ export function SaleReturnForm({
       </div>
 
       <dl className="return-form__summary">
+        {/* The whole adjustment, spelled out: listed at 600, 25 discount, 575 back. This IS the
+            conversation at the counter, so it is stated rather than left to be inferred. */}
+        <dt>Item value</dt>
+        <dd data-testid="billed-total">{formatPkr(totals.billed)}</dd>
+
+        {totals.discount > 0 && (
+          <>
+            <dt>Discount given on the sale</dt>
+            <dd data-testid="discount-total">− {formatPkr(totals.discount)}</dd>
+          </>
+        )}
+
         <dt>Value returned</dt>
         <dd data-testid="return-total">{formatPkr(totals.total)}</dd>
 
@@ -160,6 +210,15 @@ export function SaleReturnForm({
         <dt>Refund owed to customer</dt>
         <dd data-testid="refund-due">{formatPkr(totals.refundDue)}</dd>
       </dl>
+
+      {/* What to say to the customer, in words, before the money moves. */}
+      {totals.discount > 0 && (
+        <p className="return-form__notice" role="note" data-testid="discount-note">
+          Tell the customer: this item is {formatPkr(totals.billed)}, but a{' '}
+          {formatPkr(totals.discount)} discount was given on the sale — so{' '}
+          {formatPkr(totals.total)} is adjusted, not {formatPkr(totals.billed)}.
+        </p>
+      )}
 
       {totals.refundDue > 0 && (
         <p className="return-form__notice" role="note">

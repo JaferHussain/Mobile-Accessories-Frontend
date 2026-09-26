@@ -14,6 +14,8 @@ export interface Customer {
    */
   openingBalance?: number | null;
   isActive: boolean;
+  /** A standing label the owner sets (feature 004) — never derived from their invoices. */
+  saleType: 'Retail' | 'Wholesale';
 }
 
 export type LedgerEntryType =
@@ -78,11 +80,13 @@ export const customerApi = {
     );
   },
 
-  search(search?: string, withBalanceOnly = false): Promise<PagedResult<Customer>> {
+  search(params: {
+    search?: string;
+    withBalanceOnly?: boolean;
+    saleType?: 'Retail' | 'Wholesale';
+  } = {}): Promise<PagedResult<Customer>> {
     return unwrap(
-      api.get<ApiEnvelope<PagedResult<Customer>>>('/customers', {
-        params: { search, withBalanceOnly },
-      }),
+      api.get<ApiEnvelope<PagedResult<Customer>>>('/customers', { params }),
     );
   },
 

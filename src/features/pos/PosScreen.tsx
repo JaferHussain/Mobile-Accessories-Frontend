@@ -1,15 +1,19 @@
-import { useMemo, useState } from 'react';
-import { calculateCart, CartError, requiresCustomer, type CartLine } from '@/lib/cart';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { calculateCart, CartError, type CartLine } from '@/lib/cart';
+import { useCart } from './CartProvider';
 import { formatPkr } from '@/lib/money';
 import { ApiError } from '@/types/api';
 import type { Product } from '@/features/products/productApi';
-import { QuickCreateCustomer } from './QuickCreateCustomer';
+import { ProductPicture } from '@/features/products/ProductPicture';
+import { CheckoutModal, type CheckoutDetails } from './CheckoutModal';
+import { ShareButtons } from '@/features/documents/ShareButtons';
+import type { DocumentType, ShareLink } from '@/features/documents/documentApi';
 import {
-  FULLY_PAID_METHODS,
-  paymentMethodsFor,
   SALE_TYPES,
   type CreateInvoicePayload,
+  type ProductLookup,
   type CreateInvoiceResult,
+  type CustomerSummary,
   type PaymentMethod,
   type SaleType,
 } from './posApi';
@@ -19,7 +23,7 @@ export interface PosScreenProps {
    * Looks a product up by search text or scanned barcode, priced for the sale being made — a
    * wholesale sale is quoted the wholesale price.
    */
-  onFindProduct: (term: string, saleType: SaleType) => Promise<Product | null>;
+  onFindProduct: (term: string, saleType: SaleType) => Promise<ProductLookup>;
 
   /**
    * Re-reads one product's price for a different sale type. Used when the salesman switches
@@ -30,11 +34,52 @@ export interface PosScreenProps {
   onCreateCustomer: (name: string, mobileNumber: string | null) => Promise<{ id: number; name: string }>;
 
   /**
+   * Finds customers already on file, for the checkout modal's picker. Without it the counter
+   * could only CREATE customers, so every repeat udhaar sale made a second record with a second
+   * balance and the owner chasing a debt saw half of it.
+   */
+  onSearchCustomers: (term: string) => Promise<CustomerSummary[]>;
+
+  /**
    * Whether this user may complete a sale that leaves money outstanding. Only the shop owner
    * may (FR-051). Passed in rather than read from auth here so this component stays a pure
    * function of its props, which is what makes the cart maths testable in isolation.
    */
   canSellOnCredit: boolean;
+
+  /**
+   * Attaches the screenshot behind a non-cash payment to the sale just saved (feature 008).
+   * Addressed to an invoice id, which is why it can only be offered after the save.
+   */
+  onUploadPaymentProof?: (invoiceId: number, picture: File) => Promise<void>;
+
+  /**
+   * How long a cash sale's confirmation stays before fading. Injectable so a test can assert the
+   * fading without waiting six seconds for it.
+   */
+  confirmationVisibleMs?: number;
+
+  /** Fetches the invoice document, so the customer can be handed their bill on the spot. */
+  onFetchDocument?: (documentType: DocumentType, referenceId: number) => Promise<Blob>;
+
+  /** Mints the link the WhatsApp and SMS messages carry. */
+  onCreateShareLink?: (
+    documentType: DocumentType,
+    referenceId: number,
+    mobileNumber?: string | null,
+  ) => Promise<ShareLink>;
+
+  /**
+   * Opens the Products list to shop from the catalogue. The cart survives the trip, which is
+   * the whole reason this is offered at all.
+   */
+  onBrowseProducts?: () => void;
+
+  /**
+   * Arrived here from a product's Sell button (feature 005): search this immediately, once,
+   * without waiting for the salesman to press Enter a second time for something already chosen.
+   */
+  initialTerm?: string;
 }
 
 /**
@@ -44,46 +89,64 @@ export interface PosScreenProps {
  * shopkeeper reads is the number that gets stored — but the server still recomputes everything
  * on save and its answer is final (FR-013).
  */
+/** How long a cash sale's confirmation stays before fading. Long enough to read, short enough
+ *  not to sit in the way of the next customer. */
+const ConfirmationVisibleMs = 6000;
+
 export function PosScreen({
   onFindProduct,
   onRepriceProduct,
   onSave,
   onCreateCustomer,
+  onSearchCustomers,
   canSellOnCredit,
+  initialTerm,
+  onUploadPaymentProof,
+  onBrowseProducts,
+  onFetchDocument,
+  onCreateShareLink,
+  confirmationVisibleMs = ConfirmationVisibleMs,
 }: PosScreenProps) {
-  const [term, setTerm] = useState('');
-  const [lines, setLines] = useState<CartLine[]>([]);
+  const [term, setTerm] = useState(initialTerm ?? '');
+
+  // The cart is held above the router so it survives a walk to the Products list and back, and
+  // a refresh. Without a provider this is ordinary local state, which is how the counter's
+  // maths stays testable on its own.
+  const { lines, setLines, addItem, saleType, setSaleType, needsReprice, markRepriced } = useCart();
+
   const [orderDiscount, setOrderDiscount] = useState(0);
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('Cash');
-  const [saleType, setSaleType] = useState<SaleType>('Retail');
+  const [showCheckout, setShowCheckout] = useState(false);
   const [isRepricing, setIsRepricing] = useState(false);
-  const [amountPaid, setAmountPaid] = useState(0);
-  const [customer, setCustomer] = useState<{ id: number; name: string } | null>(null);
-  const [showQuickCreate, setShowQuickCreate] = useState(false);
   const [lookupError, setLookupError] = useState<string | null>(null);
+  const [results, setResults] = useState<Product[]>([]);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [receipt, setReceipt] = useState<CreateInvoiceResult | null>(null);
+  const [proofState, setProofState] = useState<'idle' | 'sending' | 'done' | 'failed'>('idle');
+
+  // The method the SAVED sale used, kept beside the receipt. resetSale() puts the live control
+  // back to Cash for the next customer, so reading `paymentMethod` here would hide the proof
+  // box on the very bank transfer that needs it.
+  const [receiptMethod, setReceiptMethod] = useState<PaymentMethod>('Cash');
+
+  // The number the SAVED sale's customer had, kept beside the receipt for the same reason
+  // receiptMethod is: the checkout has closed and the counter has moved on, so reading it live
+  // would offer the next customer's details against the previous customer's bill.
+  const [receiptCustomerMobile, setReceiptCustomerMobile] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
-  const fullyPaidMethod = FULLY_PAID_METHODS.includes(paymentMethod);
-
-  // A cash-type method always settles the bill; Credit pays nothing; Partial is whatever the
-  // shopkeeper typed. Deriving this stops the two controls contradicting each other.
+  // What the goods come to. How it is paid for is settled in the checkout modal, once, at the
+  // end — so nothing here needs to know about payment at all.
   const totals = useMemo(() => {
     if (lines.length === 0) {
       return null;
     }
 
     try {
-      const gross = calculateCart(lines, orderDiscount, 0);
-      const paid =
-        paymentMethod === 'Credit' ? 0 : fullyPaidMethod ? gross.total : Math.min(amountPaid, gross.total);
-
-      return calculateCart(lines, orderDiscount, paid);
+      return calculateCart(lines, orderDiscount, 0);
     } catch {
       return null;
     }
-  }, [lines, orderDiscount, amountPaid, paymentMethod, fullyPaidMethod]);
+  }, [lines, orderDiscount]);
 
   const cartError = useMemo(() => {
     if (lines.length === 0) {
@@ -98,6 +161,39 @@ export function PosScreen({
     }
   }, [lines, orderDiscount]);
 
+  // Runs the hand-off from a product's Sell button exactly once. The ref, not state, is what
+  // makes it once: this component can re-render many times afterward (a save, a re-price)
+  // without a stale `initialTerm` prop somehow searching again.
+  const ranInitialLookup = useRef(false);
+
+  useEffect(() => {
+    if (initialTerm && !ranInitialLookup.current) {
+      ranInitialLookup.current = true;
+      void handleLookup();
+    }
+    // handleLookup closes over `term`/`saleType`, both fixed at mount time for this one-shot
+    // call — re-running this effect on their change would defeat the "once" guarantee above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialTerm]);
+
+  // A cart restored from storage still carries the prices it was saved with. Re-read them once,
+  // before anything can be sold. Lines the salesman just added are not re-priced: the lookup
+  // that put them there priced them moments ago.
+  const repricedRestoredCart = useRef(false);
+
+  useEffect(() => {
+    if (!needsReprice || lines.length === 0 || repricedRestoredCart.current) {
+      return;
+    }
+
+    repricedRestoredCart.current = true;
+
+    void repriceAll(saleType).finally(markRepriced);
+    // Deliberately keyed on the restore flag alone: this is a one-shot correction at mount,
+    // not something that should re-run as the salesman edits the cart it produced.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [needsReprice, lines.length]);
+
   async function handleLookup() {
     const query = term.trim();
 
@@ -108,15 +204,28 @@ export function PosScreen({
     setLookupError(null);
 
     try {
-      const product = await onFindProduct(query, saleType);
+      const found = await onFindProduct(query, saleType);
 
-      if (!product) {
-        setLookupError(`No product found for "${query}".`);
+      if (found.kind === 'barcode') {
+        // A scan names one item and cannot mean another. Straight in, as it always has been.
+        addProduct(found.product);
+        setResults([]);
+        setTerm('');
+
         return;
       }
 
-      addProduct(product);
-      setTerm('');
+      if (found.products.length === 0) {
+        setResults([]);
+        setLookupError(`No product found for "${query}".`);
+
+        return;
+      }
+
+      // Typed searches stop here. Even a single match is offered rather than taken: "the only
+      // thing matching what I typed" is not the same as "the thing in the customer's hand",
+      // and an unnoticed wrong line is found later at the till, or not at all.
+      setResults(found.products);
     } catch (error) {
       setLookupError(
         error instanceof ApiError ? error.message : 'Could not search for that product.',
@@ -124,27 +233,13 @@ export function PosScreen({
     }
   }
 
+  // The merge rule lives in the cart store, shared with the Products list: the server refuses
+  // two lines for one product, so a repeat scan increments the quantity.
   function addProduct(product: Product) {
-    setLines((current) => {
-      const existing = current.find((line) => line.productId === product.id);
-
-      // The server refuses two lines for one product, so a repeat scan increments the quantity.
-      if (existing) {
-        return current.map((line) =>
-          line.productId === product.id ? { ...line, quantity: line.quantity + 1 } : line,
-        );
-      }
-
-      return [
-        ...current,
-        {
-          productId: product.id,
-          productName: product.name,
-          quantity: 1,
-          unitSalePrice: product.salePrice,
-          lineDiscount: 0,
-        },
-      ];
+    addItem({
+      productId: product.id,
+      productName: product.name,
+      unitSalePrice: product.salePrice,
     });
   }
 
@@ -158,7 +253,18 @@ export function PosScreen({
    */
   async function changeSaleType(next: SaleType) {
     setSaleType(next);
+    await repriceAll(next);
+  }
 
+  /**
+   * Re-reads every line's price from the server.
+   *
+   * Used for two different reasons that need the same thing: switching between retail and
+   * wholesale, and restoring a cart from storage. The second matters because the server takes
+   * the unit price from the client, so a cart carrying a price from before a purchase changed
+   * it would sell at the old figure with nothing to flag it.
+   */
+  async function repriceAll(forSaleType: SaleType) {
     if (lines.length === 0) {
       return;
     }
@@ -169,7 +275,7 @@ export function PosScreen({
       const prices = await Promise.all(
         lines.map(async (line) => {
           try {
-            return [line.productId, await onRepriceProduct(line.productId, next)] as const;
+            return [line.productId, await onRepriceProduct(line.productId, forSaleType)] as const;
           } catch {
             return [line.productId, null] as const;
           }
@@ -205,34 +311,56 @@ export function PosScreen({
   function resetSale() {
     setLines([]);
     setOrderDiscount(0);
-    setAmountPaid(0);
-    setPaymentMethod('Cash');
     // Sale type deliberately survives a completed sale: a wholesale customer is usually
     // followed by more wholesale, and re-selecting it every time invites a misfiled sale.
-    setCustomer(null);
+    // Customer and payment need no reset — the checkout modal is created fresh each time.
+    setShowCheckout(false);
     setSaveError(null);
+    setResults([]);
+    setTerm('');
+    setLookupError(null);
   }
 
-  async function handleSave() {
+  // A cash sale is finished the moment it is saved: the money is in the drawer and there is
+  // nothing left to attach or send that the salesman must be kept looking at. So its confirmation
+  // fades by itself, and the counter is ready with no click at all.
+  //
+  // A non-cash banner stays. It carries the payment-proof upload and the sharing actions, and a
+  // timer that removes an unfinished job from under the salesman is worse than one more click.
+  useEffect(() => {
+    if (!receipt || receiptMethod !== 'Cash') {
+      return;
+    }
+
+    const timer = setTimeout(() => setReceipt(null), confirmationVisibleMs);
+
+    return () => clearTimeout(timer);
+  }, [receipt, receiptMethod, confirmationVisibleMs]);
+
+
+  /**
+   * Completes the sale with what the checkout modal collected.
+   *
+   * Errors are re-thrown rather than swallowed: the modal stays open and shows them, so a
+   * refusal (no stock, a credit sale a salesman may not make) leaves the cart intact and the
+   * salesman on the screen that can fix it.
+   */
+  async function handleConfirm(details: CheckoutDetails) {
     if (!totals) {
       return;
     }
 
     setSaveError(null);
-
-    if (requiresCustomer(totals) && !customer) {
-      setShowQuickCreate(true);
-      return;
-    }
-
     setIsSaving(true);
 
     try {
       const result = await onSave({
-        customerId: customer?.id ?? null,
+        customerId: details.customerId,
         orderDiscount,
-        amountPaid: totals.amountPaid,
-        paymentMethod,
+        amountPaid: details.amountPaid,
+        paymentMethod: details.paymentMethod,
+        paymentAccountNumber: details.paymentAccountNumber,
+        paymentTransactionId: details.paymentTransactionId,
         saleType,
         items: lines.map((line) => ({
           productId: line.productId,
@@ -243,20 +371,14 @@ export function PosScreen({
       });
 
       setReceipt(result);
+      setReceiptMethod(details.paymentMethod);
+      setReceiptCustomerMobile(details.customerMobile);
+      setProofState('idle');
+      setShowCheckout(false);
       resetSale();
-    } catch (error) {
-      setSaveError(
-        error instanceof ApiError ? error.message : 'Could not save the sale. Please try again.',
-      );
     } finally {
       setIsSaving(false);
     }
-  }
-
-  async function handleQuickCreate(name: string, mobileNumber: string | null) {
-    const created = await onCreateCustomer(name, mobileNumber);
-    setCustomer(created);
-    setShowQuickCreate(false);
   }
 
   return (
@@ -264,11 +386,70 @@ export function PosScreen({
       <h2>Point of sale</h2>
 
       {receipt && (
-        <p className="pos__receipt" role="status">
-          Saved {receipt.invoiceNumber} — total {formatPkr(receipt.total)}, paid{' '}
-          {formatPkr(receipt.amountPaid)}
-          {receipt.amountRemaining > 0 && <>, balance {formatPkr(receipt.amountRemaining)}</>}.
-        </p>
+        <div className="pos__receipt" role="status">
+          <p>
+            Saved {receipt.invoiceNumber} — total {formatPkr(receipt.total)}, paid{' '}
+            {formatPkr(receipt.amountPaid)}
+            {receipt.amountRemaining > 0 && <>, balance {formatPkr(receipt.amountRemaining)}</>}.
+          </p>
+
+          {/* Non-cash only: cash was counted into the drawer, so there is nothing to evidence
+              and an unused control on the busiest screen is noise. */}
+          {receiptMethod !== 'Cash' && onUploadPaymentProof && (
+            <div className="pos__proof">
+              <label htmlFor="paymentProof">Payment proof</label>
+              <input
+                id="paymentProof"
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                disabled={proofState === 'sending'}
+                onChange={(event) => {
+                  const picture = event.target.files?.[0];
+
+                  if (!picture) {
+                    return;
+                  }
+
+                  setProofState('sending');
+
+                  // The sale is already recorded and stays recorded whatever happens here —
+                  // a failed screenshot must never read as a failed sale.
+                  void onUploadPaymentProof(receipt.invoiceId, picture)
+                    .then(() => setProofState('done'))
+                    .catch(() => setProofState('failed'));
+                }}
+              />
+
+              {proofState === 'done' && <span className="pos__proof-ok">Proof attached.</span>}
+              {proofState === 'failed' && (
+                <span className="pos__proof-failed">
+                  Could not attach the proof. The sale is saved — try again.
+                </span>
+              )}
+            </div>
+          )}
+
+          {/* The customer is still standing there — this is the moment to hand over the bill. */}
+          {onFetchDocument && onCreateShareLink && (
+            <ShareButtons
+              documentType="Invoice"
+              referenceId={receipt.invoiceId}
+              customerMobile={receiptCustomerMobile}
+              hasCustomer={receipt.customerId !== null}
+              onFetchDocument={onFetchDocument}
+              onCreateShareLink={onCreateShareLink}
+            />
+          )}
+
+          {/* Only a lingering banner needs dismissing; a cash confirmation fades on its own. */}
+          {receiptMethod !== 'Cash' && (
+            <div className="form-actions">
+              <button type="button" className="pos__dismiss" onClick={() => setReceipt(null)}>
+                Dismiss
+              </button>
+            </div>
+          )}
+        </div>
       )}
 
       <fieldset className="pos__sale-type">
@@ -309,15 +490,58 @@ export function PosScreen({
             }
           }}
         />
+        {/* "Search", not "Add": since feature 005 this button no longer puts anything in the
+            cart — it looks the term up and offers what it found. Only a scan adds directly. */}
         <button type="button" onClick={() => void handleLookup()}>
-          Add
+          Search
         </button>
+
+        {/* The other half of shopping from the catalogue. The cart lives above the router, so
+            this walk no longer destroys the sale in progress. */}
+        {onBrowseProducts && (
+          <button type="button" className="pos__browse" onClick={onBrowseProducts}>
+            Add more items
+          </button>
+        )}
       </div>
 
       {lookupError && (
         <p className="form-error" role="alert">
           {lookupError}
         </p>
+      )}
+
+      {results.length > 0 && (
+        <ul className="pos__results" data-testid="pos-results">
+          {results.map((product) => (
+            <li key={product.id} className="pos__result" data-testid={`pos-result-${product.id}`}>
+              <ProductPicture imagePath={product.imagePath} name={product.name} />
+
+              <span className="pos__result-name">{product.name}</span>
+
+              <span className="pos__result-meta">
+                {product.brand ?? 'Unbranded'} · {product.category}
+              </span>
+
+              {/* Priced for the sale type chosen at the top — a wholesale sale quotes the
+                  wholesale price, resolved by the server, not worked out here. */}
+              <span className="pos__result-price">{formatPkr(product.salePrice)}</span>
+
+              <span className="pos__result-stock">{product.quantityOnHand} in stock</span>
+
+              <button
+                type="button"
+                onClick={() => {
+                  addProduct(product);
+                  setResults([]);
+                  setTerm('');
+                }}
+              >
+                Add
+              </button>
+            </li>
+          ))}
+        </ul>
       )}
 
       {lines.length === 0 ? (
@@ -342,7 +566,7 @@ export function PosScreen({
               const priced = totals?.lines.find((l) => l.productId === line.productId);
 
               return (
-                <tr key={line.productId}>
+                <tr key={line.productId} data-testid={`cart-line-${line.productId}`}>
                   <td>{line.productName}</td>
                   <td>
                     <input
@@ -416,38 +640,8 @@ export function PosScreen({
           />
         </div>
 
-        <div className="field">
-          <label htmlFor="paymentMethod">Payment</label>
-          <select
-            id="paymentMethod"
-            value={paymentMethod}
-            onChange={(event) => setPaymentMethod(event.target.value as PaymentMethod)}
-          >
-            {paymentMethodsFor(canSellOnCredit).map((method) => (
-              <option key={method.value} value={method.value}>
-                {method.label}
-              </option>
-            ))}
-          </select>
-          {!canSellOnCredit && (
-            <small className="field__hint">Only the owner can approve udhaar.</small>
-          )}
-        </div>
-
-        {paymentMethod === 'Partial' && (
-          <div className="field">
-            <label htmlFor="amountPaid">Amount paid now</label>
-            <input
-              id="amountPaid"
-              type="number"
-              min="0"
-              step="0.01"
-              value={String(amountPaid)}
-              onChange={(event) => setAmountPaid(Number(event.target.value))}
-            />
-          </div>
-        )}
-
+        {/* Payment moved into the checkout modal: who is paying and how is asked once, at the
+            end, not while the cart is still being built. */}
         <dl className="pos__summary">
           <dt>Subtotal</dt>
           <dd data-testid="subtotal">{formatPkr(totals?.subtotal ?? 0)}</dd>
@@ -457,16 +651,8 @@ export function PosScreen({
 
           <dt>Total</dt>
           <dd data-testid="total">{formatPkr(totals?.total ?? 0)}</dd>
-
-          <dt>Paid</dt>
-          <dd data-testid="paid">{formatPkr(totals?.amountPaid ?? 0)}</dd>
-
-          <dt>Balance</dt>
-          <dd data-testid="remaining">{formatPkr(totals?.amountRemaining ?? 0)}</dd>
         </dl>
       </div>
-
-      {customer && <p className="pos__customer">Customer: {customer.name}</p>}
 
       {saveError && (
         <p className="form-error" role="alert">
@@ -475,15 +661,30 @@ export function PosScreen({
       )}
 
       <div className="form-actions">
-        <button type="button" onClick={() => void handleSave()} disabled={!totals || isSaving}>
-          {isSaving ? 'Saving…' : 'Save sale'}
+        <button type="button" onClick={() => setShowCheckout(true)} disabled={!totals || isSaving}>
+          Proceed to sale
         </button>
+
+        {/* Says why the button is unavailable. It is disabled whenever there is nothing to
+            sell, which is the correct behaviour — but unexplained it reads as a fault, and
+            that is precisely how the screen felt after a sale emptied the cart. */}
+        {!totals && !isSaving && (
+          <small className="field__hint" data-testid="save-hint">
+            {lines.length === 0
+              ? 'Scan or search for a product to start a sale.'
+              : 'Check the cart — these totals are not valid yet.'}
+          </small>
+        )}
       </div>
 
-      {showQuickCreate && (
-        <QuickCreateCustomer
-          onCreate={handleQuickCreate}
-          onCancel={() => setShowQuickCreate(false)}
+      {showCheckout && totals && (
+        <CheckoutModal
+          total={totals.total}
+          canSellOnCredit={canSellOnCredit}
+          onSearchCustomers={onSearchCustomers}
+          onCreateCustomer={onCreateCustomer}
+          onConfirm={handleConfirm}
+          onCancel={() => setShowCheckout(false)}
         />
       )}
     </section>

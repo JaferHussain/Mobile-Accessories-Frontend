@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ProductForm, type ProductFormProps } from '@/features/products/ProductForm';
@@ -7,7 +7,7 @@ import type { Product } from '@/features/products/productApi';
 import { brandApi, categoryApi } from '@/features/taxonomy/taxonomyApi';
 import { ApiError } from '@/types/api';
 
-// Category and brand are chosen from the taxonomy modules now, so the form fetches both lists.
+// Category and brand are chosen from the taxonomy modules, so the form fetches both lists.
 vi.mock('@/features/taxonomy/taxonomyApi', () => ({
   categoryApi: { search: vi.fn() },
   brandApi: { search: vi.fn() },
@@ -43,6 +43,7 @@ const existing: Product = {
   name: 'Type-C Braided 2m',
   categoryId: 1,
   category: 'Cables',
+  brandId: 5,
   brand: 'Baseus',
   model: 'CATZ-01',
   barcode: '8901234567890',
@@ -94,22 +95,24 @@ describe('ProductForm', () => {
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
-  it('rejects a negative sale price', async () => {
-    const onSubmit = vi.fn();
-    const user = userEvent.setup();
-    await renderForm({ onSubmit });
+  it('carries no price or quantity field at all', async () => {
+    await renderForm({ onSubmit: vi.fn() });
 
-    await user.type(screen.getByLabelText('Name'), 'Cable');
-    await user.selectOptions(screen.getByLabelText('Category'), '1');
+    // Replaces the old price-validation tests. A product is a catalogue entry now: cost, both
+    // selling prices and the quantity are set by its first purchase, on the Purchases screen.
+    expect(screen.queryByLabelText('Sale price')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Cost price')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Wholesale price')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Retail price')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Quantity in stock')).not.toBeInTheDocument();
+  });
 
-    // type="number" min="0" stops a negative being typed, so this guard exists for values that
-    // arrive another way — a paste, or a browser that permits it. fireEvent reproduces that.
-    fireEvent.change(screen.getByLabelText('Sale price'), { target: { value: '-5' } });
+  it('says where the prices are set instead', async () => {
+    await renderForm({ onSubmit: vi.fn() });
 
-    await user.click(screen.getByRole('button', { name: /save product/i }));
-
-    expect(await screen.findByText('Sale price cannot be negative.')).toBeInTheDocument();
-    expect(onSubmit).not.toHaveBeenCalled();
+    // An absent field with no explanation reads as a broken form, so the form names the screen
+    // that does set them.
+    expect(await screen.findByText(/record a purchase/i)).toBeInTheDocument();
   });
 
   it('submits a trimmed product', async () => {
@@ -119,10 +122,7 @@ describe('ProductForm', () => {
 
     await user.type(screen.getByLabelText('Name'), '  Type-C Cable  ');
     await user.selectOptions(screen.getByLabelText('Category'), '1');
-
-    const salePrice = screen.getByLabelText('Sale price');
-    await user.clear(salePrice);
-    await user.type(salePrice, '1100');
+    await user.selectOptions(screen.getByLabelText('Brand'), '5');
 
     await user.click(screen.getByRole('button', { name: /save product/i }));
 
@@ -131,8 +131,9 @@ describe('ProductForm', () => {
         expect.objectContaining({
           name: 'Type-C Cable',
           categoryId: 1,
-          salePrice: 1100,
         }),
+        // Feature 005: the picture travels as a second argument, null when none was chosen.
+        null,
       ),
     );
   });
@@ -144,38 +145,57 @@ describe('ProductForm', () => {
 
     await user.type(screen.getByLabelText('Name'), 'Cable');
     await user.selectOptions(screen.getByLabelText('Category'), '1');
+    await user.selectOptions(screen.getByLabelText('Brand'), '5');
     await user.click(screen.getByRole('button', { name: /save product/i }));
 
+    // Brand is NOT in this list — it is required, so "blank" is not a state it has.
     await waitFor(() =>
       expect(onSubmit).toHaveBeenCalledWith(
-        expect.objectContaining({ brandId: null, model: null, barcode: null }),
+        expect.objectContaining({ brandId: 5, model: null, barcode: null }),
+        null,
       ),
     );
+  });
+
+  it('requires a brand, and says where generic stock goes', async () => {
+    const onSubmit = vi.fn();
+    const user = userEvent.setup();
+    await renderForm({ onSubmit });
+
+    await user.type(screen.getByLabelText('Name'), 'Cable');
+    await user.selectOptions(screen.getByLabelText('Category'), '1');
+    await user.click(screen.getByRole('button', { name: /save product/i }));
+
+    // "A brand is required" alone would strand the shopkeeper on an item that genuinely has no
+    // maker printed on it, so the message names the way out.
+    expect(await screen.findByText(/Brand is required/i)).toBeInTheDocument();
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it('offers every category, not a subset', async () => {
+    await renderForm({ onSubmit: vi.fn() });
+
+    // A category is no longer tied to the chosen brand — the whole list is always available.
+    expect(screen.getByRole('option', { name: 'Cables' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Chargers' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Category')).not.toBeDisabled();
   });
 
   it('prefills when editing', async () => {
     await renderForm({ initial: existing, onSubmit: vi.fn() });
 
     expect(screen.getByLabelText('Name')).toHaveValue('Type-C Braided 2m');
-    expect(screen.getByLabelText('Sale price')).toHaveValue(1100);
+    expect(screen.getByLabelText('Reorder at')).toHaveValue(3);
   });
 
-  it('locks cost and quantity when editing, because they move elsewhere', async () => {
+  it('shows no price or stock field when editing either', async () => {
     await renderForm({ initial: existing, onSubmit: vi.fn() });
 
-    // Stock moves through purchases, sales, returns and audited adjustments; cost moves through
-    // a purchase (FR-011a). The API ignores both on update, so the form must not invite an edit.
-    expect(screen.getByLabelText('Cost price')).toBeDisabled();
-    expect(screen.getByLabelText('Quantity in stock')).toBeDisabled();
-    expect(screen.getByText(/only when you record a purchase/i)).toBeInTheDocument();
-    expect(screen.getByText(/use a stock adjustment/i)).toBeInTheDocument();
-  });
-
-  it('leaves cost and quantity editable when creating', async () => {
-    await renderForm({ onSubmit: vi.fn() });
-
-    expect(screen.getByLabelText('Cost price')).toBeEnabled();
-    expect(screen.getByLabelText('Quantity in stock')).toBeEnabled();
+    // They used to be present-but-disabled. Absent is stronger: a disabled field still invites
+    // the question "why can I not change this?", and the answer is that it is not this form's.
+    expect(screen.queryByLabelText('Cost price')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Quantity in stock')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Sale price')).not.toBeInTheDocument();
   });
 
   it('shows the server message when saving fails', async () => {
@@ -188,6 +208,7 @@ describe('ProductForm', () => {
 
     await user.type(screen.getByLabelText('Name'), 'Cable');
     await user.selectOptions(screen.getByLabelText('Category'), '1');
+    await user.selectOptions(screen.getByLabelText('Brand'), '5');
     await user.click(screen.getByRole('button', { name: /save product/i }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/already used/i);
@@ -196,7 +217,7 @@ describe('ProductForm', () => {
   it('maps server field errors onto the right inputs', async () => {
     const onSubmit = vi.fn().mockRejectedValue(
       new ApiError('VALIDATION_FAILED', 'One or more fields are invalid.', 400, [
-        { field: 'SalePrice', message: 'Sale price cannot be negative.' },
+        { field: 'Name', message: 'That product name is already used.' },
       ]),
     );
 
@@ -205,9 +226,10 @@ describe('ProductForm', () => {
 
     await user.type(screen.getByLabelText('Name'), 'Cable');
     await user.selectOptions(screen.getByLabelText('Category'), '1');
+    await user.selectOptions(screen.getByLabelText('Brand'), '5');
     await user.click(screen.getByRole('button', { name: /save product/i }));
 
-    expect(await screen.findByText('Sale price cannot be negative.')).toBeInTheDocument();
+    expect(await screen.findByText('That product name is already used.')).toBeInTheDocument();
   });
 
   it('disables the button while saving', async () => {
@@ -219,6 +241,7 @@ describe('ProductForm', () => {
 
     await user.type(screen.getByLabelText('Name'), 'Cable');
     await user.selectOptions(screen.getByLabelText('Category'), '1');
+    await user.selectOptions(screen.getByLabelText('Brand'), '5');
     await user.click(screen.getByRole('button', { name: /save product/i }));
 
     expect(await screen.findByRole('button', { name: /saving/i })).toBeDisabled();

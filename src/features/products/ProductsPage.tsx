@@ -1,13 +1,18 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { productApi, type Product, type ProductUpsert } from './productApi';
 import { ProductForm } from './ProductForm';
+import { ProductGrid } from './ProductGrid';
+import { ProductDetail } from './ProductDetail';
 import { LowStockBadge } from '@/components/LowStockBadge';
 import { QueryState } from '@/components/QueryState';
 import { formatPkr } from '@/lib/money';
 import { useAuth } from '@/features/auth/AuthContext';
 import { isTooShortSearch } from '@/lib/searchTerms';
 import { brandApi, categoryApi, type TaxonomyItem } from '@/features/taxonomy/taxonomyApi';
+import { useCart } from '@/features/pos/CartProvider';
+import { CartBadge } from '@/features/pos/CartBadge';
 
 /** Active rows, A to Z (FR-085). The API already orders them; sorting here keeps the list stable. */
 function alphabetical(items: TaxonomyItem[] | undefined): TaxonomyItem[] {
@@ -16,8 +21,11 @@ function alphabetical(items: TaxonomyItem[] | undefined): TaxonomyItem[] {
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
+const VIEW_PREFERENCE_KEY = 'moizpos.products.view';
+
 export function ProductsPage() {
   const { isAdmin } = useAuth();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
 
   const [search, setSearch] = useState('');
@@ -28,10 +36,68 @@ export function ProductsPage() {
   const [brandId, setBrandId] = useState('');
   const [categoryId, setCategoryId] = useState('');
   // Local brands only (FR-087) — a tick, like low stock beside it, because it is on or off.
-  const [localOnly, setLocalOnly] = useState(false);
-  const hasFilters = brandId !== '' || categoryId !== '' || localOnly;
+  const hasFilters = brandId !== '' || categoryId !== '';
+  // Shopping from the catalogue. The counter can only be searched one term at a time, which is
+  // the wrong tool for "show me everything Oppo and let me pick three".
+  const { addItem, saleType } = useCart();
+  const [added, setAdded] = useState<string | null>(null);
+  const [addError, setAddError] = useState<string | null>(null);
+
+  /**
+   * Adds one unit to the sale in progress.
+   *
+   * The price is RE-READ from the server rather than taken from the row: this list is priced at
+   * the counter rate, and the sale being built may be a wholesale one — adding the row's own
+   * price would quietly sell wholesale goods at retail.
+   */
+  async function addToCart(product: Product) {
+    setAddError(null);
+
+    try {
+      const priced = await productApi.get(product.id, saleType);
+
+      addItem({
+        productId: priced.id,
+        productName: priced.name,
+        unitSalePrice: priced.salePrice,
+      });
+
+      setAdded(priced.name);
+    } catch {
+      // Adding at an unknown price is worse than not adding at all.
+      setAddError(`Could not add ${product.name} — its price could not be read.`);
+    }
+  }
+
   const [editing, setEditing] = useState<Product | null>(null);
   const [isCreating, setIsCreating] = useState(false);
+
+  // Which view, remembered per browser (FR-008). The table is the default: it is the denser,
+  // faster read, and the one the shop has been using. localStorage can throw or come back
+  // empty in a private window, so a failure here simply means "no preference yet".
+  const [view, setView] = useState<'list' | 'grid'>(() => {
+    try {
+      return localStorage.getItem(VIEW_PREFERENCE_KEY) === 'grid' ? 'grid' : 'list';
+    } catch {
+      return 'list';
+    }
+  });
+
+  const [viewing, setViewing] = useState<Product | null>(null);
+
+  function chooseView(next: 'list' | 'grid') {
+    setView(next);
+    // Switching views while a detail panel is open left it stranded beneath the newly-drawn
+    // table, with its picture no longer next to the card it came from — closing it is the only
+    // reading that makes sense once the view underneath has changed.
+    setViewing(null);
+
+    try {
+      localStorage.setItem(VIEW_PREFERENCE_KEY, next);
+    } catch {
+      // A remembered preference is a convenience; losing it must never break the screen.
+    }
+  }
 
   // A search made only of one-letter words is refused by the server (FR-079). Rather than send it,
   // the screen shows a hint and keeps searching for the last thing that was long enough, so the
@@ -58,13 +124,12 @@ export function ProductsPage() {
   // Every filter is part of the key, so each combination is cached on its own and the server —
   // not this screen — decides what matches (FR-083).
   const { data, isPending, error } = useQuery({
-    queryKey: ['products', appliedSearch, lowStockOnly, brandId, categoryId, localOnly],
+    queryKey: ['products', appliedSearch, lowStockOnly, brandId, categoryId],
     queryFn: () =>
       productApi.search({
         search: appliedSearch || undefined,
         brandId: brandId ? Number(brandId) : undefined,
         categoryId: categoryId ? Number(categoryId) : undefined,
-        localOnly: localOnly || undefined,
         lowStockOnly,
         pageSize: 100,
       }),
@@ -74,12 +139,23 @@ export function ProductsPage() {
   function clearFilters() {
     setBrandId('');
     setCategoryId('');
-    setLocalOnly(false);
   }
 
   const save = useMutation({
-    mutationFn: (product: ProductUpsert) =>
-      editing ? productApi.update(editing.id, product) : productApi.create(product),
+    mutationFn: async ({ product, picture }: { product: ProductUpsert; picture?: File | null }) => {
+      const saved = editing
+        ? await productApi.update(editing.id, product)
+        : await productApi.create(product);
+
+      // Second call on purpose: the upload is addressed to the product's id, which a create
+      // does not have until it has returned. The product is saved either way — a picture that
+      // fails to upload must not throw away the fields the shopkeeper just typed.
+      if (picture) {
+        await productApi.uploadImage(saved.id, picture);
+      }
+
+      return saved;
+    },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['products'] });
       setEditing(null);
@@ -96,8 +172,8 @@ export function ProductsPage() {
     return (
       <ProductForm
         initial={editing ?? undefined}
-        onSubmit={async (product) => {
-          await save.mutateAsync(product);
+        onSubmit={async (product, picture) => {
+          await save.mutateAsync({ product, picture });
         }}
         onCancel={() => {
           setEditing(null);
@@ -111,12 +187,49 @@ export function ProductsPage() {
     <section>
       <header className="page-header">
         <h2>Products</h2>
-        {isAdmin && (
-          <button type="button" onClick={() => setIsCreating(true)}>
-            New product
-          </button>
-        )}
+
+        <div className="page-header__actions">
+          {/* The way back to a sale in progress, and the proof that the Add clicks went
+              somewhere. Hidden entirely while the cart is empty. */}
+          <CartBadge />
+
+          {/* Presentation only. Both views read the one query below. */}
+          <div className="view-toggle" role="group" aria-label="View">
+            <button
+              type="button"
+              aria-pressed={view === 'list'}
+              onClick={() => chooseView('list')}
+            >
+              List
+            </button>
+            <button
+              type="button"
+              aria-pressed={view === 'grid'}
+              onClick={() => chooseView('grid')}
+            >
+              Pictures
+            </button>
+          </div>
+
+          {isAdmin && (
+            <button type="button" onClick={() => setIsCreating(true)}>
+              New product
+            </button>
+          )}
+        </div>
       </header>
+
+      {added && (
+        <p className="form-success" role="status">
+          {added} added to the sale.
+        </p>
+      )}
+
+      {addError && (
+        <p className="form-error" role="alert">
+          {addError}
+        </p>
+      )}
 
       <div className="filters">
         <div className="field">
@@ -176,15 +289,6 @@ export function ProductsPage() {
           Only items needing reorder
         </label>
 
-        <label className="checkbox">
-          <input
-            type="checkbox"
-            checked={localOnly}
-            onChange={(event) => setLocalOnly(event.target.checked)}
-          />
-          Local brands only
-        </label>
-
         {hasFilters && (
           <button type="button" onClick={clearFilters}>
             Clear filters
@@ -203,6 +307,9 @@ export function ProductsPage() {
             : 'No products match that search.'
         }
       >
+        {view === 'grid' ? (
+          <ProductGrid products={data?.items ?? []} onOpen={setViewing} />
+        ) : (
         <table className="data-table">
           <caption className="visually-hidden">Products</caption>
           <thead>
@@ -213,6 +320,9 @@ export function ProductsPage() {
               <th scope="col">Price</th>
               {isAdmin && <th scope="col">Cost</th>}
               <th scope="col">Stock</th>
+              <th scope="col">
+                <span className="visually-hidden">Add to sale</span>
+              </th>
               {isAdmin && (
                 <th scope="col">
                   <span className="visually-hidden">Actions</span>
@@ -240,6 +350,18 @@ export function ProductsPage() {
                     isLowStock={product.isLowStock}
                   />
                 </td>
+                <td>
+                  {/* Out of stock is disabled rather than hidden: the server would refuse the
+                      sale anyway, and saying so here saves a trip to the counter. */}
+                  <button
+                    type="button"
+                    disabled={product.quantityOnHand <= 0}
+                    aria-label={`Add ${product.name} to cart`}
+                    onClick={() => void addToCart(product)}
+                  >
+                    Add to cart
+                  </button>
+                </td>
                 {isAdmin && (
                   <td>
                     <button type="button" onClick={() => setEditing(product)}>
@@ -261,7 +383,40 @@ export function ProductsPage() {
             ))}
           </tbody>
         </table>
+        )}
       </QueryState>
+
+      {viewing && (
+        <ProductDetail
+          product={viewing}
+          onClose={() => setViewing(null)}
+          onSell={() =>
+            navigate('/pos', {
+              // A barcode is unambiguous, so it takes priority; otherwise the counter's own
+              // search does the matching, same as if the salesman had typed the name.
+              state: { prefillTerm: viewing.barcode || viewing.name },
+            })
+          }
+          onEdit={
+            isAdmin
+              ? () => {
+                  setEditing(viewing);
+                  setViewing(null);
+                }
+              : undefined
+          }
+          onRetire={
+            isAdmin
+              ? () => {
+                  if (window.confirm(`Retire "${viewing.name}"? Past invoices keep it.`)) {
+                    deactivate.mutate(viewing.id);
+                    setViewing(null);
+                  }
+                }
+              : undefined
+          }
+        />
+      )}
     </section>
   );
 }

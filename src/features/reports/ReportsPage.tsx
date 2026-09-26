@@ -12,6 +12,7 @@ import {
   type SaleTypeTotals,
   type StockMovementRow,
   type StockRow,
+  type UserSalesRow,
 } from './reportApi';
 import { QueryState } from '@/components/QueryState';
 import { LowStockBadge } from '@/components/LowStockBadge';
@@ -19,6 +20,7 @@ import { formatPkr } from '@/lib/money';
 
 type ReportName =
   | 'sales-by-type'
+  | 'sales-by-user'
   | 'profit'
   | 'profit-by-product'
   | 'stock'
@@ -29,6 +31,7 @@ type ReportName =
 
 const REPORTS: ReadonlyArray<{ value: ReportName; label: string }> = [
   { value: 'sales-by-type', label: 'Retail vs wholesale' },
+  { value: 'sales-by-user', label: 'Salesmen' },
   { value: 'profit', label: 'Sales & profit' },
   { value: 'profit-by-product', label: 'Profit by product' },
   { value: 'stock', label: 'Stock' },
@@ -41,6 +44,7 @@ const REPORTS: ReadonlyArray<{ value: ReportName; label: string }> = [
 /** Reports that read a date range; the rest are a snapshot of right now. */
 const RANGED: ReadonlySet<ReportName> = new Set([
   'sales-by-type',
+  'sales-by-user',
   'profit',
   'profit-by-product',
   'expenses',
@@ -71,6 +75,12 @@ export function ReportsPage() {
   // One typed query per report, each fetching only while its report is on screen. A single
   // query returning a union would need casts at every use, which is where display bugs hide.
   const ready = (name: ReportName) => report === name && (!RANGED.has(name) || !rangeInvalid);
+
+  const salesByUser = useQuery({
+    queryKey: ['report', 'sales-by-user', from, to],
+    queryFn: () => reportApi.salesByUser(from, to),
+    enabled: ready('sales-by-user'),
+  });
 
   const salesByType = useQuery({
     queryKey: ['report', 'sales-by-type', from, to],
@@ -129,6 +139,7 @@ export function ReportsPage() {
 
   const active = {
     'sales-by-type': openedType === null ? salesByType : salesList,
+    'sales-by-user': salesByUser,
     profit,
     'profit-by-product': byProduct,
     stock,
@@ -223,6 +234,7 @@ export function ReportsPage() {
                 onBack={() => setOpenedType(null)}
               />
             ))}
+          {report === 'sales-by-user' && <UserSalesTable rows={salesByUser.data ?? []} />}
           {report === 'profit' && <ProfitTable rows={profit.data ?? []} />}
           {report === 'profit-by-product' && <ProductProfitTable rows={byProduct.data ?? []} />}
           {report === 'stock' && <StockTable rows={stock.data ?? []} />}
@@ -373,6 +385,50 @@ function SaleListTable({
         </table>
       )}
     </div>
+  );
+}
+
+/**
+ * Each salesman's period.
+ *
+ * <p>Cash taken and credit given are kept apart because they are different risks: one is money
+ * in the drawer tonight, the other is money that walked out of the shop. Discount is shown
+ * beside them, because a salesman who discounts heavily and takes little cash is a different
+ * conversation from one who simply sold less.</p>
+ *
+ * <p>No cost, no profit — this is accountability, not margin.</p>
+ */
+function UserSalesTable({ rows }: { rows: UserSalesRow[] }) {
+  if (rows.length === 0) {
+    return <p>Nobody sold anything in this period.</p>;
+  }
+
+  return (
+    <table className="data-table" data-testid="sales-by-user">
+      <caption className="visually-hidden">Sales by salesman</caption>
+      <thead>
+        <tr>
+          <th scope="col">Salesman</th>
+          <th scope="col">Sales</th>
+          <th scope="col">Cash taken</th>
+          <th scope="col">Credit given</th>
+          <th scope="col">Discount given</th>
+          <th scope="col">Bills</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((row) => (
+          <tr key={row.userId} data-testid={`user-sales-${row.userId}`}>
+            <td>{row.userName}</td>
+            <td className="numeric">{formatPkr(row.totalSales)}</td>
+            <td className="numeric">{formatPkr(row.cashTaken)}</td>
+            <td className="numeric">{formatPkr(row.creditGiven)}</td>
+            <td className="numeric">{formatPkr(row.discountGiven)}</td>
+            <td className="numeric">{row.invoiceCount}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
 

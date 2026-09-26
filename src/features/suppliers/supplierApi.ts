@@ -7,14 +7,35 @@ export interface Supplier {
   name: string;
   contactNumber?: string | null;
   address?: string | null;
+  /** Stored exactly as entered — the supplier's own paperwork sets the format. */
+  cnic?: string | null;
+  email?: string | null;
+  bankName?: string | null;
+  bankAccountTitle?: string | null;
+  bankAccountNumber?: string | null;
+  notes?: string | null;
   payableBalance: number;
   isActive: boolean;
+}
+
+/** Everything a supplier record accepts. Only the name is required. */
+export interface SupplierUpsert {
+  name: string;
+  contactNumber?: string | null;
+  address?: string | null;
+  cnic?: string | null;
+  email?: string | null;
+  bankName?: string | null;
+  bankAccountTitle?: string | null;
+  bankAccountNumber?: string | null;
+  notes?: string | null;
 }
 
 export interface Purchase {
   id: number;
   supplierId: number;
   productId: number;
+  productName: string;
   purchaseDateUtc: string;
   unitCost: number;
   quantity: number;
@@ -39,10 +60,12 @@ export const supplierApi = {
     );
   },
 
-  create(name: string, contactNumber?: string | null, address?: string | null): Promise<Supplier> {
-    return unwrap(
-      api.post<ApiEnvelope<Supplier>>('/suppliers', { name, contactNumber, address }),
-    );
+  create(supplier: SupplierUpsert): Promise<Supplier> {
+    return unwrap(api.post<ApiEnvelope<Supplier>>('/suppliers', supplier));
+  },
+
+  update(id: number, supplier: SupplierUpsert): Promise<Supplier> {
+    return unwrap(api.put<ApiEnvelope<Supplier>>(`/suppliers/${id}`, supplier));
   },
 
   recordPayment(
@@ -62,10 +85,12 @@ export const supplierApi = {
 };
 
 export const purchaseApi = {
-  search(supplierId?: number): Promise<PagedResult<Purchase>> {
+  /** "Return item": productSearch finds a purchase by product name instead of scrolling every
+   * purchase from a supplier. */
+  search(supplierId?: number, productSearch?: string): Promise<PagedResult<Purchase>> {
     return unwrap(
       api.get<ApiEnvelope<PagedResult<Purchase>>>('/purchases', {
-        params: { supplierId, pageSize: 50 },
+        params: { supplierId, productSearch, pageSize: 50 },
       }),
     );
   },

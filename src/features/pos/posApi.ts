@@ -45,6 +45,24 @@ export const FULLY_PAID_METHODS: readonly PaymentMethod[] = [
 /** Counter sale or bulk sale to another shopkeeper. Drives the owner's day-end split. */
 export type SaleType = 'Retail' | 'Wholesale';
 
+/**
+ * What a counter lookup found — and, crucially, HOW it found it (feature 005).
+ *
+ * A scanned barcode is unambiguous: the salesman is holding the very item it came off, so it
+ * goes straight into the cart. A typed search is a guess among look-alike stock, so it returns
+ * candidates for the salesman to pick from. Collapsing these two into one shape is what made
+ * the old code add the first search hit automatically.
+ */
+export type ProductLookup =
+  | { kind: 'barcode'; product: ProductSummary }
+  | { kind: 'matches'; products: ProductSummary[] };
+
+/** The counter only ever needs the fields it shows; imported to avoid a circular module. */
+type ProductSummary = import('@/features/products/productApi').Product;
+
+/** How many candidates a typed search offers. Enough to choose from, few enough to scan by eye. */
+export const MAX_SEARCH_RESULTS = 8;
+
 export const SALE_TYPES: ReadonlyArray<{ value: SaleType; label: string }> = [
   { value: 'Retail', label: 'Retail' },
   { value: 'Wholesale', label: 'Wholesale' },
@@ -63,6 +81,10 @@ export interface CreateInvoicePayload {
   orderDiscount: number;
   amountPaid: number;
   paymentMethod: PaymentMethod;
+  /** The customer's account, where a non-cash payment came from. A cash sale is refused one. */
+  paymentAccountNumber?: string | null;
+  /** Their reference for that transfer. Optional, permanently. */
+  paymentTransactionId?: string | null;
   saleType: SaleType;
   items: CreateInvoiceLine[];
 }
@@ -87,6 +109,19 @@ export interface CustomerSummary {
 }
 
 export const posApi = {
+  /**
+   * Attaches the screenshot behind a non-cash payment to an invoice that already exists
+   * (feature 008). Separate from createInvoice on purpose: the sale must never wait on it.
+   */
+  uploadPaymentProof(invoiceId: number, picture: File): Promise<void> {
+    const body = new FormData();
+    body.append('file', picture);
+
+    return unwrap(
+      api.post<ApiEnvelope<unknown>>(`/invoices/${invoiceId}/payment-proof`, body),
+    ).then(() => undefined);
+  },
+
   /**
    * Saves the sale. The Idempotency-Key protects against a double-tap at a busy counter: a
    * replayed key returns the sale already recorded rather than selling the goods twice.

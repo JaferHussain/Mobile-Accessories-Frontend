@@ -13,11 +13,24 @@ export interface DashboardData {
   period: DashboardPeriod;
   totalSales: number;
   totalPurchases: number;
+  /** Value returned by customers this period. Already netted into totalSales via net_amount. */
+  totalSaleReturns: number;
+  /** Value sent back to suppliers this period. Already netted into totalPurchases. */
+  totalPurchaseReturns: number;
   grossProfit: number;
   totalExpenses: number;
   netProfit: number;
   cashSales: number;
   creditSales: number;
+
+  /**
+   * How creditSales was made up. Visibility only — every rupee here is already inside
+   * creditSales and totalReceivables, so these are never added to either.
+   */
+  udhaarSalesCount: number;
+  udhaarSalesAmount: number;
+  partPaidSalesCount: number;
+  partPaidRemaining: number;
   /** The period's takings split by how the sale was made. Always both sides, zero included. */
   salesByType?: Array<{
     saleType: 'Retail' | 'Wholesale';
@@ -49,11 +62,14 @@ function KpiCard({
   value,
   testId,
   tone,
+  note,
 }: {
   label: string;
   value: string;
   testId: string;
   tone?: 'good' | 'bad';
+  /** A second line under the figure — a count, or where the money already sits. */
+  note?: string;
 }) {
   return (
     <div className={`kpi${tone ? ` kpi--${tone}` : ''}`}>
@@ -61,8 +77,18 @@ function KpiCard({
       <strong className="kpi__value" data-testid={testId}>
         {value}
       </strong>
+      {note && (
+        <span className="kpi__note" data-testid={`${testId}-note`}>
+          {note}
+        </span>
+      )}
     </div>
   );
+}
+
+/** "1 sale", "4 sales" — a count the owner reads, not a bare number. */
+function saleCount(count: number): string {
+  return `${count} ${count === 1 ? 'sale' : 'sales'}`;
 }
 
 /**
@@ -101,6 +127,19 @@ export function Dashboard({ data, period, isLoading = false, onPeriodChange }: D
           <div className="dashboard__kpis">
             <KpiCard label="Sales" value={formatPkr(data.totalSales)} testId="kpi-sales" />
             <KpiCard label="Purchases" value={formatPkr(data.totalPurchases)} testId="kpi-purchases" />
+            {/* Already folded into Sales/Purchases above via net_amount — shown again so the
+                owner sees how much came back, not just the smaller number it produced. */}
+            <KpiCard
+              label="Sale returns"
+              value={formatPkr(data.totalSaleReturns)}
+              testId="kpi-sale-returns"
+              tone={data.totalSaleReturns > 0 ? 'bad' : undefined}
+            />
+            <KpiCard
+              label="Purchase returns"
+              value={formatPkr(data.totalPurchaseReturns)}
+              testId="kpi-purchase-returns"
+            />
             <KpiCard label="Gross profit" value={formatPkr(data.grossProfit)} testId="kpi-gross-profit" />
             <KpiCard label="Expenses" value={formatPkr(data.totalExpenses)} testId="kpi-expenses" />
             <KpiCard
@@ -126,10 +165,27 @@ export function Dashboard({ data, period, isLoading = false, onPeriodChange }: D
             />
             <KpiCard label="Cash sales" value={formatPkr(data.cashSales)} testId="kpi-cash-sales" />
             <KpiCard label="Credit sales" value={formatPkr(data.creditSales)} testId="kpi-credit-sales" />
+            {/* The two halves of Credit sales above. Visibility, not new money: both are
+                already inside Credit sales and Owed to shop, so neither is added to them. */}
+            <KpiCard
+              label="Udhaar sales"
+              value={formatPkr(data.udhaarSalesAmount)}
+              testId="kpi-udhaar-sales"
+              note={saleCount(data.udhaarSalesCount)}
+              tone={data.udhaarSalesAmount > 0 ? 'bad' : undefined}
+            />
+            <KpiCard
+              label="Part paid — still owed"
+              value={formatPkr(data.partPaidRemaining)}
+              testId="kpi-part-paid-remaining"
+              note={saleCount(data.partPaidSalesCount)}
+              tone={data.partPaidRemaining > 0 ? 'bad' : undefined}
+            />
             <KpiCard
               label="Owed to shop"
               value={formatPkr(data.totalReceivables)}
               testId="kpi-receivables"
+              note="includes today's udhaar"
             />
             <KpiCard
               label="Shop owes"

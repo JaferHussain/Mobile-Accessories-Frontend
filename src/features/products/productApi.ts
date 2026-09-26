@@ -15,14 +15,23 @@ export interface Product {
   model?: string | null;
   barcode?: string | null;
   imagePath?: string | null;
+  /**
+   * The price that applies to THIS request — retailPrice or wholesalePrice, whichever the
+   * saleType asked for. Resolved by the server per request; it is not a stored column.
+   */
   salePrice: number;
   quantityOnHand: number;
   isLowStock: boolean;
   isActive: boolean;
 
   // Present only for an Admin (FR-040).
+  // The shop's three stored prices. Admin only — a Staff principal receives `salePrice` alone,
+  // so the salesman is told the one price that applies rather than handed the price list.
+  /** What we paid the supplier. */
   costPrice?: number;
+  /** What a bulk buyer pays. */
   wholesalePrice?: number;
+  /** What a walk-in pays. */
   retailPrice?: number;
   minStockThreshold?: number;
   supplierId?: number | null;
@@ -50,13 +59,12 @@ export interface ProductUpsert {
   brandId?: number | null;
   model?: string | null;
   barcode?: string | null;
-  costPrice: number;
-  wholesalePrice: number;
-  retailPrice: number;
-  salePrice: number;
-  quantityOnHand: number;
   minStockThreshold: number;
   supplierId?: number | null;
+
+  // No prices and no quantity. A product is a catalogue entry — what the thing IS. What it
+  // costs, what it sells for and how many are on the shelf all arrive with its first purchase,
+  // and the server refuses to take them here.
 }
 
 export const productApi = {
@@ -86,5 +94,22 @@ export const productApi = {
 
   deactivate(id: number): Promise<void> {
     return api.delete(`/products/${id}`).then(() => undefined);
+  },
+
+  /**
+   * Attaches a picture to a product that already exists — the upload is addressed to its id,
+   * so this always follows a create or update, never accompanies one. The server generates the
+   * thumbnail and removes any previous picture.
+   */
+  uploadImage(id: number, picture: File): Promise<{ productId: number; imagePath: string }> {
+    const body = new FormData();
+    body.append('file', picture);
+
+    return unwrap(
+      api.post<ApiEnvelope<{ productId: number; imagePath: string }>>(
+        `/products/${id}/image`,
+        body,
+      ),
+    );
   },
 };

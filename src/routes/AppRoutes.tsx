@@ -5,10 +5,13 @@ import { PosPage } from '@/features/pos/PosPage';
 import { ProductsPage } from '@/features/products/ProductsPage';
 import { BrandsPage, CategoriesPage } from '@/features/taxonomy/TaxonomyPage';
 import { CustomersPage } from '@/features/customers/CustomersPage';
+import { InvoicesPage } from '@/features/invoices/InvoicesPage';
 import { PurchasesPage } from '@/features/purchases/PurchasesPage';
+import { ReturnsPage } from '@/features/returns/ReturnsPage';
 import { SuppliersPage } from '@/features/suppliers/SuppliersPage';
 import { ExpensesPage } from '@/features/expenses/ExpensesPage';
 import { ReportsPage } from '@/features/reports/ReportsPage';
+import { DayClosePage } from '@/features/dayclose/DayClosePage';
 import { DashboardPage } from '@/features/dashboard/DashboardPage';
 import { AdminPage } from '@/features/admin/AdminPage';
 import { ProtectedRoute } from './ProtectedRoute';
@@ -55,14 +58,20 @@ export function AppRoutes() {
         <Route path="/pos" element={<PosPage />} />
         <Route path="/products" element={<ProductsPage />} />
         <Route path="/customers" element={<CustomersPage />} />
+        {/* Not Admin-only: handing a customer their own receipt is counter work, and the list
+            carries no cost or profit. */}
+        <Route path="/invoices" element={<InvoicesPage />} />
         <Route path="/forbidden" element={<Forbidden />} />
 
         <Route path="/categories" element={<AdminOnly><CategoriesPage /></AdminOnly>} />
         <Route path="/brands" element={<AdminOnly><BrandsPage /></AdminOnly>} />
         <Route path="/purchases" element={<AdminOnly><PurchasesPage /></AdminOnly>} />
+        <Route path="/returns" element={<ReturnsPage />} />
         <Route path="/suppliers" element={<AdminOnly><SuppliersPage /></AdminOnly>} />
         <Route path="/expenses" element={<AdminOnly><ExpensesPage /></AdminOnly>} />
         <Route path="/reports" element={<AdminOnly><ReportsPage /></AdminOnly>} />
+        {/* The control OVER the salesman's handling of cash — so never theirs to perform. */}
+        <Route path="/day-close" element={<AdminOnly><DayClosePage /></AdminOnly>} />
         <Route path="/dashboard" element={<AdminOnly><DashboardPage /></AdminOnly>} />
         <Route path="/admin" element={<AdminOnly><AdminPage /></AdminOnly>} />
       </Route>

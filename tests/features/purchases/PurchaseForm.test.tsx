@@ -20,13 +20,23 @@ const product: Product = {
   minStockThreshold: 3,
 };
 
+/** Never stocked: no price, nothing on the shelf. What the Products screen now produces. */
+const brandNew: Product = {
+  ...product,
+  id: 8,
+  name: 'New Charger',
+  salePrice: 0,
+  costPrice: 0,
+  quantityOnHand: 0,
+};
+
 const suppliers = [
   { id: 1, name: 'Ali Traders' },
   { id: 2, name: 'Bilal Distributors' },
 ];
 
-function renderForm(onSubmit = vi.fn().mockResolvedValue(undefined)) {
-  render(<PurchaseForm product={product} suppliers={suppliers} onSubmit={onSubmit} />);
+function renderForm(onSubmit = vi.fn().mockResolvedValue(undefined), item: Product = product) {
+  render(<PurchaseForm product={item} suppliers={suppliers} onSubmit={onSubmit} />);
   return onSubmit;
 }
 
@@ -94,24 +104,63 @@ describe('PurchaseForm cost rule visibility', () => {
     expect(screen.getByRole('note')).toHaveTextContent('Rs 780.00');
   });
 
-  it('offers to update the sale price only once the cost has changed', async () => {
-    const user = userEvent.setup();
+  it('always offers both selling prices, prefilled from the product', () => {
     renderForm();
 
-    expect(screen.queryByLabelText(/also update the sale price/i)).not.toBeInTheDocument();
+    // They used to hide behind an "also update the sale price" tick that only appeared once the
+    // cost changed. Stocking is where a price is set now, so they are ordinary fields.
+    expect(screen.getByLabelText('Retail price')).toHaveValue(1100);
+    expect(screen.getByLabelText('Wholesale price')).toHaveValue(0);
+  });
 
-    setNumber('Cost per unit', '850');
+  it('warns that a price change reaches stock already on the shelf', () => {
+    renderForm();
 
-    const toggle = screen.getByLabelText(/also update the sale price/i);
-    await user.click(toggle);
+    expect(screen.getByText(/every unit on hand/i)).toBeInTheDocument();
+  });
+});
 
-    expect(screen.getByLabelText('New sale price')).toBeInTheDocument();
-    expect(screen.getByText(/applies to every remaining unit/i)).toBeInTheDocument();
+describe('PurchaseForm stocking a product for the first time', () => {
+  it('says the product has no price yet', () => {
+    renderForm(vi.fn(), brandNew);
+
+    expect(screen.getByText(/no price yet/i)).toBeInTheDocument();
+    expect(screen.getByLabelText('Retail price')).toHaveValue(0);
+  });
+
+  it('refuses to stock it without a retail price', async () => {
+    const user = userEvent.setup();
+    const onSubmit = renderForm(vi.fn().mockResolvedValue(undefined), brandNew);
+
+    setNumber('Cost per unit', '800');
+    setNumber('Quantity', '10');
+    await user.click(screen.getByRole('button', { name: /record purchase/i }));
+
+    // Stocking without pricing would put units on the shelf the counter quotes at zero. The
+    // server refuses this too; the form catches it before the round trip.
+    expect(await screen.findByText(/makes this product sellable/i)).toBeInTheDocument();
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it('accepts it once a retail price is given', async () => {
+    const user = userEvent.setup();
+    const onSubmit = renderForm(vi.fn().mockResolvedValue(undefined), brandNew);
+
+    setNumber('Cost per unit', '800');
+    setNumber('Quantity', '10');
+    setNumber('Retail price', '1100');
+    await user.click(screen.getByRole('button', { name: /record purchase/i }));
+
+    await waitFor(() =>
+      expect(onSubmit).toHaveBeenCalledWith(
+        expect.objectContaining({ unitCost: 800, quantity: 10, newRetailPrice: 1100 }),
+      ),
+    );
   });
 });
 
 describe('PurchaseForm submission', () => {
-  it('submits supplier, product, cost and quantity', async () => {
+  it('submits supplier, product, cost, quantity and both prices', async () => {
     const user = userEvent.setup();
     const onSubmit = renderForm();
 
@@ -119,27 +168,33 @@ describe('PurchaseForm submission', () => {
     setNumber('Quantity', '10');
     await user.click(screen.getByRole('button', { name: /record purchase/i }));
 
+    // The prices go with every purchase, prefilled — leaving them alone sends what the shop
+    // already charges, which the server treats as "no change".
     await waitFor(() =>
       expect(onSubmit).toHaveBeenCalledWith({
         supplierId: 1,
         productId: 7,
         unitCost: 850,
         quantity: 10,
+        newRetailPrice: 1100,
+        newWholesalePrice: 0,
       }),
     );
   });
 
-  it('includes the new sale price only when repricing was chosen', async () => {
+  it('carries a changed selling price', async () => {
     const user = userEvent.setup();
     const onSubmit = renderForm();
 
     setNumber('Cost per unit', '850');
-    await user.click(screen.getByLabelText(/also update the sale price/i));
-    setNumber('New sale price', '1200');
+    setNumber('Retail price', '1200');
+    setNumber('Wholesale price', '1000');
     await user.click(screen.getByRole('button', { name: /record purchase/i }));
 
     await waitFor(() =>
-      expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ newSalePrice: 1200 })),
+      expect(onSubmit).toHaveBeenCalledWith(
+        expect.objectContaining({ newRetailPrice: 1200, newWholesalePrice: 1000 }),
+      ),
     );
   });
 

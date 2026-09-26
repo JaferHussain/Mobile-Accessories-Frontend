@@ -80,6 +80,37 @@ describe('createApiClient', () => {
     expect(result).toEqual({ id: 7, name: 'Cable' });
   });
 
+  it('lets axios set its own multipart boundary for a FormData body', async () => {
+    // The client defaults every request to application/json. A picture upload sends FormData,
+    // and that fixed header used to travel with it — the server received a body it could not
+    // parse and refused it with 415, which is the bug this guards.
+    const seen: AxiosRequestConfig[] = [];
+    const adapter: AxiosAdapter = async (config) => {
+      seen.push(config);
+
+      return {
+        data: ok(null),
+        status: 200,
+        statusText: '',
+        headers: {},
+        config: config as never,
+      };
+    };
+
+    const body = new FormData();
+    body.append('file', new Blob(['x']), 'photo.jpg');
+
+    await unwrap(createApiClient({ adapter }).post('/products/6/image', body));
+
+    const contentType = seen[0]!.headers?.get
+      ? (seen[0]!.headers as unknown as Headers).get('Content-Type')
+      : (seen[0]!.headers as Record<string, unknown> | undefined)?.['Content-Type'];
+
+    // Axios (or the browser, under jsdom) fills this in with the boundary once the fixed
+    // default is out of the way — the point is that the client no longer forces it to JSON.
+    expect(contentType).not.toBe('application/json');
+  });
+
   it('attaches the bearer token when signed in', async () => {
     tokenStore.setAccessToken('token-abc');
     const { adapter, calls } = scriptedAdapter([{ status: 200, body: ok(null) }]);

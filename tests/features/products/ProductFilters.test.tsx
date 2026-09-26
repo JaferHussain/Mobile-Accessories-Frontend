@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { MemoryRouter } from 'react-router-dom';
 import { ProductsPage } from '@/features/products/ProductsPage';
 import { productApi, type Product } from '@/features/products/productApi';
 import { brandApi, categoryApi } from '@/features/taxonomy/taxonomyApi';
@@ -52,11 +53,13 @@ function renderPage() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 
   return render(
-    <AuthProvider initialUser={admin}>
-      <QueryClientProvider client={client}>
-        <ProductsPage />
-      </QueryClientProvider>
-    </AuthProvider>,
+    <MemoryRouter>
+      <AuthProvider initialUser={admin}>
+        <QueryClientProvider client={client}>
+          <ProductsPage />
+        </QueryClientProvider>
+      </AuthProvider>
+    </MemoryRouter>,
   );
 }
 
@@ -234,7 +237,7 @@ describe('Products filters', () => {
   });
 });
 
-describe('Products local brands filter', () => {
+describe('Products filters no longer mention local brands', () => {
   beforeEach(() => {
     tokenStore.clear();
     window.localStorage.clear();
@@ -246,42 +249,15 @@ describe('Products local brands filter', () => {
     );
   });
 
-  it('asks for local-brand products only when ticked', async () => {
-    const user = userEvent.setup();
+  it('offers no local-brands filter, and never asks the server for one', async () => {
     renderPage();
 
     await screen.findByText('Type-C Braided Cable');
-    expect(lastSearch()).not.toMatchObject({ localOnly: true });
 
-    await user.click(screen.getByLabelText(/local brands only/i));
-
-    await waitFor(() => expect(lastSearch()).toMatchObject({ localOnly: true }));
-  });
-
-  it('combines with the category filter and the search', async () => {
-    const user = userEvent.setup();
-    renderPage();
-
-    await screen.findByRole('option', { name: 'Earbuds' });
-    await user.click(screen.getByLabelText(/local brands only/i));
-    await user.selectOptions(screen.getByLabelText('Category'), '11');
-    await user.type(screen.getByLabelText('Search'), 'basic');
-
-    // FR-088.
-    await waitFor(() =>
-      expect(lastSearch()).toMatchObject({ localOnly: true, categoryId: 11, search: 'basic' }),
-    );
-  });
-
-  it('is reset by Clear filters', async () => {
-    const user = userEvent.setup();
-    renderPage();
-
-    await screen.findByText('Type-C Braided Cable');
-    await user.click(screen.getByLabelText(/local brands only/i));
-    await user.click(screen.getByRole('button', { name: /clear filters/i }));
-
-    expect(screen.getByLabelText(/local brands only/i)).not.toBeChecked();
-    await waitFor(() => expect(lastSearch().localOnly).toBeFalsy());
+    // The shop handles local goods as an ordinary brand with a name, not as a flag on every
+    // brand. Replaces the old "Products local brands filter" block: with nothing able to set
+    // the flag, a filter requiring it could only ever return an empty list.
+    expect(screen.queryByLabelText(/local brands only/i)).not.toBeInTheDocument();
+    expect(lastSearch().localOnly).toBeUndefined();
   });
 });

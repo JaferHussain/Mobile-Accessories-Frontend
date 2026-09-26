@@ -2,6 +2,7 @@ import axios, {
   type AxiosAdapter,
   type AxiosError,
   type AxiosInstance,
+  type AxiosRequestConfig,
   type AxiosResponse,
   type InternalAxiosRequestConfig,
 } from 'axios';
@@ -63,6 +64,13 @@ export function createApiClient(options: ApiClientOptions = {}): AxiosInstance {
       config.headers.set('Authorization', `Bearer ${token}`);
     }
 
+    // A FormData body (a picture upload) must go out as multipart/form-data, with a boundary
+    // axios generates from the data itself. The client's own JSON default would otherwise
+    // mislabel it, and the server rejects an unparsable body with 415.
+    if (config.data instanceof FormData) {
+      config.headers.delete('Content-Type');
+    }
+
     return config;
   });
 
@@ -96,6 +104,18 @@ export function createApiClient(options: ApiClientOptions = {}): AxiosInstance {
     async (error: AxiosError) => {
       const config = error.config as RetriableConfig | undefined;
       const status = error.response?.status;
+
+      // A document request asks for a Blob, so its ERROR body arrives as one too — the ordinary
+      // JSON envelope, wrapped in bytes. Read back here, centrally, or every failed document
+      // fetch reports a generic "unexpected error" while the server's real reason sits unread
+      // inside the blob. Done before the mapping below so nothing downstream has to know.
+      if (error.response?.data instanceof Blob) {
+        try {
+          error.response.data = JSON.parse(await error.response.data.text());
+        } catch {
+          // Not an envelope — leave the body alone and let the generic mapping handle it.
+        }
+      }
 
       const shouldRefresh =
         status === 401 &&
@@ -148,6 +168,30 @@ export async function unwrap<T>(request: Promise<AxiosResponse<ApiEnvelope<T>>>)
   } catch (error) {
     throw error instanceof ApiError ? error : toApiError(error);
   }
+}
+
+/**
+ * Fetches a document as raw bytes.
+ *
+ * <b>Deliberately not `unwrap`.</b> A PDF has no `ApiResponse` envelope, so `response.data.success`
+ * is `undefined` and every successful document fetch would be reported as a server failure. This
+ * is the mirror image of the FormData trap the request interceptor already handles: there the JSON
+ * `Content-Type` had to be removed on the way out, here the envelope must not be expected on the
+ * way back.
+ *
+ * A failure still arrives as the ordinary JSON envelope — but as a Blob, because that is what was
+ * asked for. The response interceptor reads it back before mapping, so a refused request surfaces
+ * the server's real reason instead of being handed to the shopkeeper as a "document" that actually
+ * contains an error message.
+ */
+export async function fetchBlob(
+  client: AxiosInstance,
+  url: string,
+  config: AxiosRequestConfig = {},
+): Promise<Blob> {
+  const response = await client.get<Blob>(url, { ...config, responseType: 'blob' });
+
+  return response.data;
 }
 
 /** The shared client used by the application. */

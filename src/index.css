@@ -9,40 +9,55 @@
    ========================================================================== */
 
 :root {
-  /* Surfaces */
-  --page:        #f1f5f9;
+  /* Surfaces — a faintly blue page so white cards lift off it rather than
+     merging into it. Pure #fff on #fff is what makes a screen look flat. */
+  --page:        #eef2f9;
   --surface:     #ffffff;
-  --surface-alt: #f8fafc;
-  --border:      #e2e8f0;
-  --border-firm: #cbd5e1;
+  --surface-alt: #f6f8fc;
+  --border:      #e4e9f2;
+  --border-firm: #c7d0e0;
 
   /* Ink */
-  --ink:         #0f172a;
-  --ink-soft:    #475569;
-  --ink-muted:   #64748b;
+  --ink:         #111a2e;
+  --ink-soft:    #45526b;
+  --ink-muted:   #6b7891;
 
-  /* Sidebar */
-  --rail:        #1e293b;
-  --rail-deep:   #0f172a;
-  --rail-ink:    #cbd5e1;
+  /* Sidebar — deep navy rather than slate grey. Paired with the indigo accent
+     below it reads as one deliberate colour, not two greys that drifted. */
+  --rail:        #16203a;
+  --rail-deep:   #0b1120;
+  --rail-ink:    #c3cddf;
 
-  /* Accents — one per KPI tile and panel header */
-  --blue:        #2563eb;
-  --green:       #16a34a;
-  --amber:       #f59e0b;
+  /* Accents — one per KPI tile and panel header. Each carries a -deep shade
+     for its hover, so no hover colour is a literal buried in a rule. */
+  --blue:        #4f46e5;
+  --blue-deep:   #4338ca;
+  --green:       #15a05c;
+  --green-deep:  #10814a;
+  --amber:       #ea9a0b;
+  --amber-deep:  #c27c04;
   --purple:      #7c3aed;
   --teal:        #0d9488;
-  --red:         #dc2626;
+  --red:         #e0393e;
+  --red-deep:    #bd2026;
 
-  --blue-soft:   #eff6ff;
-  --green-soft:  #f0fdf4;
-  --amber-soft:  #fffbeb;
-  --red-soft:    #fef2f2;
+  --blue-soft:   #eef0ff;
+  --green-soft:  #eafaf1;
+  --amber-soft:  #fff6e6;
+  --red-soft:    #fdeeee;
 
-  --radius:      10px;
-  --radius-sm:   6px;
-  --shadow:      0 1px 2px rgba(15, 23, 42, 0.06), 0 1px 3px rgba(15, 23, 42, 0.08);
-  --shadow-lift: 0 4px 12px rgba(15, 23, 42, 0.10);
+  /* The accent at low opacity — focus rings, glows, tinted hovers. */
+  --blue-ring:   rgba(79, 70, 229, 0.18);
+  --blue-glow:   rgba(79, 70, 229, 0.28);
+
+  --radius:      14px;
+  --radius-sm:   9px;
+
+  /* Two-part shadows: a tight contact edge plus a wide soft ambient one. A
+     single blurred shadow reads as fog; the pair reads as a raised surface. */
+  --shadow:      0 1px 2px rgba(17, 26, 46, 0.05), 0 4px 12px rgba(17, 26, 46, 0.06);
+  --shadow-lift: 0 2px 4px rgba(17, 26, 46, 0.06), 0 12px 28px rgba(17, 26, 46, 0.12);
+  --shadow-hover: 0 2px 6px rgba(17, 26, 46, 0.07), 0 10px 24px rgba(17, 26, 46, 0.11);
 
   font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
   line-height: 1.5;
@@ -136,7 +151,10 @@ h3 { font-size: 1rem; margin: 1.75rem 0 0.5rem; }
   font-size: 0.82rem;
 }
 
-.shell__user button:hover {
+/* `:not(:disabled)` is here to win, not to guard: without it this ties the global
+   `button:hover:not(:disabled)` on specificity and loses on source order, so the red hover
+   below never actually appeared. */
+.shell__user button:hover:not(:disabled) {
   background: var(--red-soft);
   border-color: var(--red);
   color: var(--red);
@@ -150,7 +168,9 @@ h3 { font-size: 1rem; margin: 1.75rem 0 0.5rem; }
   flex-direction: column;
   gap: 0.15rem;
   padding: 1rem 0.65rem;
-  background: var(--rail);
+  /* Graded top-to-bottom so the rail has depth rather than reading as one flat
+     block of colour beside the white page. */
+  background: linear-gradient(180deg, var(--rail) 0%, var(--rail-deep) 100%);
   border-bottom: none;
 }
 
@@ -159,8 +179,13 @@ h3 { font-size: 1rem; margin: 1.75rem 0 0.5rem; }
   content: 'MOIZ MOBILE';
   display: block;
   padding: 0.75rem 0.6rem 1.25rem;
-  color: #ffffff;
-  font-weight: 700;
+  /* Faded into the accent at the tail, so the shop's name is the one bit of
+     colour at the top of the rail. */
+  background: linear-gradient(90deg, #ffffff 0%, #b9b4f5 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  font-weight: 800;
   font-size: 0.95rem;
   letter-spacing: 0.08em;
   border-bottom: 1px solid rgba(255, 255, 255, 0.12);
@@ -181,15 +206,18 @@ h3 { font-size: 1rem; margin: 1.75rem 0 0.5rem; }
 }
 
 .shell__nav a:hover {
-  background: rgba(255, 255, 255, 0.07);
+  background: rgba(255, 255, 255, 0.08);
   color: #ffffff;
 }
 
 .shell__nav a.active {
-  background: var(--blue);
+  background: linear-gradient(135deg, var(--blue) 0%, #6d5ef0 100%);
   color: #ffffff;
   font-weight: 600;
   border-bottom: none;
+  /* A soft glow in the accent's own colour: on a dark rail this is what makes
+     "where I am" visible at a glance from across the counter. */
+  box-shadow: 0 4px 14px var(--blue-glow);
 }
 
 /*
@@ -210,10 +238,15 @@ h3 { font-size: 1rem; margin: 1.75rem 0 0.5rem; }
 .shell__nav a[href='/categories']::before { content: '🗂️'; }
 .shell__nav a[href='/brands']::before     { content: '🏷️'; }
 .shell__nav a[href='/customers']::before { content: '👥'; }
+/* A bill is a document — distinct from the receipt icon Expenses uses. */
+.shell__nav a[href='/invoices']::before  { content: '📄'; }
 .shell__nav a[href='/purchases']::before { content: '🚚'; }
+.shell__nav a[href='/returns']::before   { content: '↩️'; }
 .shell__nav a[href='/suppliers']::before { content: '🏭'; }
 .shell__nav a[href='/expenses']::before  { content: '🧾'; }
 .shell__nav a[href='/reports']::before   { content: '📊'; }
+/* Counting the notes in the drawer. */
+.shell__nav a[href='/day-close']::before { content: '💵'; }
 .shell__nav a[href='/admin']::before     { content: '⚙️'; }
 
 .shell__main {
@@ -268,7 +301,7 @@ h3 { font-size: 1rem; margin: 1.75rem 0 0.5rem; }
   font-weight: 600;
 }
 
-.login-form button:hover:not(:disabled) { background: #1d4ed8; }
+.login-form button:hover:not(:disabled) { background: var(--blue-deep); }
 .login-form button:disabled { opacity: 0.65; cursor: not-allowed; }
 
 .login-form__error {
@@ -308,7 +341,7 @@ input, select, textarea {
 input:focus, select:focus, textarea:focus {
   outline: none;
   border-color: var(--blue);
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+  box-shadow: 0 0 0 3px var(--blue-ring);
 }
 
 input:disabled, select:disabled {
@@ -366,7 +399,7 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
 }
 
 .form-actions button[type='submit']:hover:not(:disabled),
-.form-actions button:first-child:hover:not(:disabled) { background: #15803d; }
+.form-actions button:first-child:hover:not(:disabled) { background: var(--green-deep); }
 
 .form-actions button[type='button']:last-child:not(:only-child) {
   background: var(--red);
@@ -376,7 +409,7 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
 }
 
 .form-actions button[type='button']:last-child:not(:only-child):hover:not(:disabled) {
-  background: #b91c1c;
+  background: var(--red-deep);
 }
 
 /* Panels that carry a coloured header bar, as on the reference layout. */
@@ -455,7 +488,7 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
   font-weight: 600;
 }
 
-.page-header button:hover:not(:disabled) { background: #15803d; }
+.page-header button:hover:not(:disabled) { background: var(--green-deep); }
 
 .filters,
 .inline-form {
@@ -481,7 +514,7 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
   font-weight: 600;
 }
 
-.inline-form button:hover:not(:disabled) { background: #1d4ed8; }
+.inline-form button:hover:not(:disabled) { background: var(--blue-deep); }
 
 .checkbox {
   display: flex;
@@ -605,7 +638,7 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
   color: #ffffff;
 }
 
-.data-table td button:first-of-type:hover:not(:disabled) { background: #1d4ed8; }
+.data-table td button:first-of-type:hover:not(:disabled) { background: var(--blue-deep); }
 
 .data-table td button:last-of-type:not(:only-of-type) {
   background: var(--red);
@@ -613,7 +646,7 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
   color: #ffffff;
 }
 
-.data-table td button:last-of-type:not(:only-of-type):hover:not(:disabled) { background: #b91c1c; }
+.data-table td button:last-of-type:not(:only-of-type):hover:not(:disabled) { background: var(--red-deep); }
 
 /* =============================================================================
    Badges
@@ -757,7 +790,7 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
   font-weight: 600;
 }
 
-.pos__lookup button:hover:not(:disabled) { background: #1d4ed8; }
+.pos__lookup button:hover:not(:disabled) { background: var(--blue-deep); }
 
 .pos__empty {
   padding: 2rem;
@@ -859,7 +892,7 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
   padding: 0.55rem 1.1rem;
 }
 
-.ledger__header button:hover:not(:disabled) { background: #15803d; }
+.ledger__header button:hover:not(:disabled) { background: var(--green-deep); }
 
 .ledger__summary {
   display: grid;
@@ -1161,3 +1194,927 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
   border-top: 2px solid var(--line);
   font-weight: 700;
 }
+
+/* =============================================================================
+   Product pictures — grid, cards, detail, and the POS result cards
+   (feature 005). Presentation only, same rule as the rest of this file.
+   ========================================================================== */
+
+.page-header__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.view-toggle {
+  display: inline-flex;
+  border: 1px solid var(--border-firm);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.view-toggle button {
+  background: var(--surface);
+  color: var(--ink-soft);
+  border: 0;
+  border-radius: 0;
+  padding: 0.5rem 0.9rem;
+  font-weight: 600;
+}
+
+.view-toggle button:hover:not(:disabled) { background: var(--surface-alt); }
+
+.view-toggle button[aria-pressed='true'] {
+  background: var(--green);
+  color: #ffffff;
+}
+
+/* The picture, wherever it appears: a list card, a search result, or the detail view. */
+.product-picture {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  background: var(--surface-alt);
+}
+
+.product-picture--empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  border: 1px dashed var(--border-firm);
+  background: var(--surface-alt);
+}
+
+.product-picture--empty::before {
+  content: '📦';
+  font-size: 1.8rem;
+  opacity: 0.45;
+}
+
+.product-picture__caption {
+  color: var(--ink-muted);
+  font-size: 0.8rem;
+}
+
+.product-detail__picture {
+  aspect-ratio: 4 / 3;
+  max-width: 22rem;
+}
+
+.product-detail__picture.product-picture--empty::before { font-size: 2.4rem; }
+
+/* The grid itself: cards that wrap, sized for a thumbnail plus three lines of text. */
+.product-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+  gap: 1rem;
+  list-style: none;
+  margin: 1rem 0 0;
+  padding: 0;
+}
+
+.product-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  width: 100%;
+  padding: 0.75rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+
+.product-card:hover { box-shadow: var(--shadow-lift); border-color: var(--border-firm); }
+
+.product-card__name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.product-card__meta {
+  color: var(--ink-muted);
+  font-size: 0.8rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.product-card__price {
+  color: var(--green);
+  font-weight: 700;
+}
+
+.product-card__stock {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--ink-soft);
+  font-size: 0.85rem;
+}
+
+/* The detail panel opened by clicking a card. */
+.product-detail {
+  margin-top: 1rem;
+  max-width: 28rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lift);
+  padding: 0 1.25rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Same coloured-header convention as .product-form, .purchase-form, etc. */
+.product-detail__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin: 0 -1.25rem 1rem;
+  padding: 0.75rem 1.25rem;
+  border-radius: var(--radius) var(--radius) 0 0;
+  background: var(--teal);
+  color: #ffffff;
+}
+
+.product-detail__header h3 { margin: 0; font-size: 0.95rem; }
+
+.product-detail__header button {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.4);
+  color: #ffffff;
+}
+
+.product-detail__header button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.28);
+}
+
+.product-detail__facts {
+  margin-top: 1rem;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.5rem 1rem;
+}
+
+.product-detail__facts dt { color: var(--ink-muted); font-size: 0.85rem; }
+.product-detail__facts dd { margin: 0; font-weight: 600; }
+
+.product-detail__actions {
+  display: flex;
+  gap: 0.6rem;
+  margin-top: 1.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+
+/* Sell is always first and always present — the one action every role gets. */
+.product-detail__sell {
+  background: var(--green);
+  border-color: var(--green);
+  color: #ffffff;
+  font-weight: 700;
+}
+
+.product-detail__sell:hover:not(:disabled) { background: var(--green-deep); }
+
+.product-detail__actions button:not(.product-detail__sell):first-of-type {
+  background: var(--blue);
+  border-color: var(--blue);
+  color: #ffffff;
+}
+
+.product-detail__actions button:not(.product-detail__sell):first-of-type:hover:not(:disabled) {
+  background: var(--blue-deep);
+}
+
+.product-detail__actions button:last-child:not(.product-detail__sell) {
+  background: var(--red);
+  border-color: var(--red);
+  color: #ffffff;
+}
+
+.product-detail__actions button:last-child:not(.product-detail__sell):hover:not(:disabled) {
+  background: var(--red-deep);
+}
+
+/* The counter's search results: a short row of cards above the cart, each with an Add. */
+.pos__results {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+  gap: 0.75rem;
+  list-style: none;
+  margin: 0 0 1rem;
+  padding: 0;
+}
+
+.pos__result {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.7rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.pos__result-name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pos__result-meta {
+  color: var(--ink-muted);
+  font-size: 0.78rem;
+}
+
+.pos__result-price { color: var(--green); font-weight: 700; }
+.pos__result-stock { color: var(--ink-soft); font-size: 0.8rem; }
+
+.pos__result button {
+  margin-top: 0.25rem;
+  padding: 0.4rem;
+  background: var(--green);
+  border-color: var(--green);
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.pos__result button:hover:not(:disabled) { background: var(--green-deep); }
+
+/* =============================================================================
+   Supplier records (feature 007) — identification and payment details
+   ========================================================================== */
+
+.supplier-form {
+  margin: 1rem 0;
+  padding: 0 1.25rem 1.25rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.supplier-form h3 {
+  margin: 0 -1.25rem 0.75rem;
+  padding: 0.75rem 1.25rem;
+  border-radius: var(--radius) var(--radius) 0 0;
+  background: var(--blue);
+  color: #ffffff;
+  font-size: 0.95rem;
+}
+
+.supplier-form__group {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+  gap: 0 1rem;
+}
+
+/* Boxed together because they are read together: whoever pays an invoice needs the bank,
+   the title and the number at once, and hunting for them among contact details is how the
+   wrong account gets paid. */
+.supplier-form__payment {
+  margin-top: 1rem;
+  padding: 0.25rem 1rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-alt);
+}
+
+.supplier-form__payment legend {
+  padding: 0 0.4rem;
+  color: var(--ink-soft);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.supplier-form__actions {
+  display: flex;
+  gap: 0.6rem;
+  margin-top: 1.25rem;
+}
+
+.supplier-form__actions button[type='submit'] {
+  background: var(--green);
+  border-color: var(--green);
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.supplier-form__actions button[type='submit']:hover:not(:disabled) { background: var(--green-deep); }
+
+/* Payment proof on a non-cash sale (feature 008) — sits inside the receipt notice, because
+   that is the moment the screenshot is in the salesman's hand. */
+.pos__proof {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+}
+
+.pos__proof label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+.pos__proof-ok { color: var(--green); font-size: 0.85rem; font-weight: 600; }
+.pos__proof-failed { color: var(--red); font-size: 0.85rem; font-weight: 600; }
+
+/* A sale in progress, and the way back to it. Shown on the Products list while the cart has
+   anything in it, and hidden entirely when it does not — a permanent "0 items" is noise. */
+.cart-badge {
+  background: #0f7b3f;
+  color: #fff;
+  border: none;
+  border-radius: 999px;
+  padding: 0.5rem 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.cart-badge:hover {
+  background: #0c6533;
+}
+
+/* Sits beside Search at the counter, leading out to the catalogue. */
+.pos__browse {
+  margin-left: 0.5rem;
+}
+
+/* A second line under a KPI figure: a count, or a note saying where the money already sits.
+   The udhaar cards need it — without "includes today's udhaar" on Owed to shop, the obvious
+   next step is to add the two together and count the same debt twice. */
+.kpi__note {
+  display: block;
+  margin-top: 0.25rem;
+  font-size: 0.8rem;
+  color: #6b7280;
+}
+
+/* Handing a customer their bill: print, file, or either messaging app on the counter device. */
+.share-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.share-buttons__number {
+  margin: 0;
+  min-width: 12rem;
+}
+
+.share-buttons__hint,
+.share-buttons__expiry {
+  flex-basis: 100%;
+  font-size: 0.8rem;
+  color: #6b7280;
+}
+
+/* Outstanding share links, for the owner deciding what to withdraw. Closed until asked: a
+   rarely-needed answer, and loading it per row would be a request nobody looked at. */
+.share-links {
+  margin-top: 0.5rem;
+}
+
+.share-links__list {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.share-links__list li {
+  display: grid;
+  gap: 0.15rem;
+  padding: 0.5rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  font-size: 0.85rem;
+}
+
+.share-links__meta {
+  color: #6b7280;
+  font-size: 0.8rem;
+}
+
+/* Counting the drawer. Every line except the counted amount is computed — a figure you can type
+   over is a figure you can fudge, and this screen exists to be hard to argue with. */
+.day-close {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.35rem 1.5rem;
+  max-width: 28rem;
+  margin: 1rem 0;
+}
+
+.day-close dt {
+  color: #374151;
+}
+
+.day-close__total {
+  border-top: 1px solid #d1d5db;
+  padding-top: 0.5rem;
+  font-weight: 700;
+}
+
+/* Stated in words as well as rupees: a bare "Rs 200.00" leaves the reader working out which way
+   it went, and a short and a surplus mean very different things. */
+.day-close__difference {
+  max-width: 28rem;
+  padding: 0.6rem 0.8rem;
+  border-radius: 6px;
+  background: #ecfdf5;
+  color: #065f46;
+  font-weight: 600;
+}
+
+.day-close__difference--off {
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+.day-close__closed {
+  color: #4b5563;
+}
+
+.day-close__note {
+  font-style: italic;
+}
+
+/* =============================================================================
+   Grouped navigation
+   ========================================================================== */
+
+/* A heading, not a destination: it opens a group rather than going anywhere, so it is a button
+   and is styled to read as quieter than the links it holds.
+
+   EVERY rule here is scoped under `.shell__nav`, and that is not tidiness. The global
+   `button:hover:not(:disabled)` (specificity 0,2,1) paints every button `--surface-alt` — very
+   nearly white. An unscoped `.shell__group-toggle:hover` is only 0,2,0, so it LOST: the heading
+   got a white background under its white text and vanished the moment the cursor touched it.
+   Scoping takes these to 0,3,0 and the dark rail keeps its own hover. */
+.shell__nav .shell__group-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 0.55rem 0.75rem;
+  margin-top: 0.35rem;
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: rgba(255, 255, 255, 0.52);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+/* Lighter ink on a barely-lit panel — the heading brightens on hover instead of disappearing
+   into one. Both properties are stated so neither can be picked up from the global button rule. */
+.shell__nav .shell__group-toggle:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+}
+
+/* An open group's heading stays brighter than a closed one's, so the rail shows at a glance
+   which section is unfolded. */
+.shell__nav .shell__group-toggle[aria-expanded='true'] {
+  color: rgba(255, 255, 255, 0.78);
+}
+
+/* Keyboard users get the same visible target, in the accent rather than the browser's default. */
+.shell__nav .shell__group-toggle:focus-visible {
+  outline: 2px solid #8b83f5;
+  outline-offset: -2px;
+  color: #ffffff;
+}
+
+/* The chevron turns rather than swapping glyph, so the heading does not shift as it opens. */
+.shell__nav .shell__group-toggle::after {
+  content: '⌄';
+  font-size: 0.95rem;
+  line-height: 1;
+  transform: translateY(-2px);
+  transition: transform 0.15s ease;
+}
+
+.shell__nav .shell__group-toggle[aria-expanded='true']::after {
+  transform: translateY(1px) rotate(180deg);
+}
+
+/* Indented and ruled, so a link inside a group reads as belonging to it rather than as another
+   top-level entry that happens to sit lower down. */
+.shell__group-items {
+  display: flex;
+  flex-direction: column;
+  margin-left: 0.6rem;
+  padding-left: 0.4rem;
+  border-left: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+/* =============================================================================
+   Depth and motion
+   =============================================================================
+   The palette at the top of this file decides what colour things are. This
+   section decides how they sit on the page: a card that lifts under the
+   cursor, a heading bar that carries its own accent, a focus ring you can
+   actually see.
+
+   Everything here is a visual property — background, shadow, transform,
+   colour. No rule changes a size that decides layout, so nothing reflows and
+   no test that reads the DOM is affected.
+   ========================================================================== */
+
+/* One transition curve for the whole app. Different easings on different
+   components is the detail that makes a screen feel assembled rather than
+   designed. */
+.kpi,
+.filters,
+.inline-form,
+.data-table,
+.empty-state,
+.product-form,
+.purchase-form,
+.expense-form,
+.return-form,
+button {
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    box-shadow 0.2s ease,
+    transform 0.15s ease;
+}
+
+/* ---------- cards ---------- */
+
+/* A KPI tile is the first thing the owner looks at, so it gets the strongest
+   treatment: a coloured strip along the top edge, and a lift on hover that
+   says the number is worth reading. The strip is a pseudo-element, not an
+   extra node — the markup stays exactly as tested. */
+.kpi {
+  position: relative;
+  overflow: hidden;
+}
+
+.kpi::after {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--blue) 0%, #6d5ef0 100%);
+  opacity: 0.85;
+}
+
+.kpi:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-hover);
+  border-color: #d6dcea;
+}
+
+/* The tile's strip follows its own icon's colour, so the row reads as a set of
+   distinct figures rather than ten identical boxes. Keyed on the same
+   nth-child as the icons above, and listed in the same order. */
+.dashboard__kpis .kpi:nth-child(1)::after  { background: linear-gradient(90deg, #4f46e5, #6d5ef0); }
+.dashboard__kpis .kpi:nth-child(2)::after  { background: linear-gradient(90deg, #ea9a0b, #f7b93c); }
+.dashboard__kpis .kpi:nth-child(3)::after  { background: linear-gradient(90deg, #0d9488, #2bc0b0); }
+.dashboard__kpis .kpi:nth-child(4)::after  { background: linear-gradient(90deg, #7c3aed, #a273f5); }
+.dashboard__kpis .kpi:nth-child(5)::after  { background: linear-gradient(90deg, #15a05c, #34c27c); }
+.dashboard__kpis .kpi:nth-child(6)::after  { background: linear-gradient(90deg, #15a05c, #34c27c); }
+.dashboard__kpis .kpi:nth-child(7)::after  { background: linear-gradient(90deg, #ea9a0b, #f7b93c); }
+.dashboard__kpis .kpi:nth-child(8)::after  { background: linear-gradient(90deg, #4f46e5, #6d5ef0); }
+.dashboard__kpis .kpi:nth-child(9)::after  { background: linear-gradient(90deg, #e0393e, #f06b6f); }
+.dashboard__kpis .kpi:nth-child(10)::after { background: linear-gradient(90deg, #4f46e5, #8b83f5); }
+
+/* The icon square gets a ring rather than sitting as a flat patch of colour. */
+.kpi::before {
+  box-shadow: inset 0 0 0 1px rgba(17, 26, 46, 0.05);
+}
+
+/* ---------- panel headers ---------- */
+
+/* Each form's coloured bar becomes a gradient in its own hue. The same colour
+   identity as before — Products teal, Purchases blue — with depth added. */
+.product-form h2  { background: linear-gradient(135deg, #0d9488 0%, #14b8a6 100%); }
+.purchase-form h2 { background: linear-gradient(135deg, var(--blue) 0%, #6d5ef0 100%); }
+.expense-form h2  { background: linear-gradient(135deg, #7c3aed 0%, #9968f7 100%); }
+.return-form h2   { background: linear-gradient(135deg, #ea9a0b 0%, #f7b93c 100%); }
+
+/* ---------- tables ---------- */
+
+/* The header keeps the rail's navy so the two dark surfaces agree, but graded
+   across rather than flat. */
+.data-table thead th,
+.pos__cart thead th,
+.ledger__table thead th,
+.audit__table thead th,
+.backup-panel__table thead th,
+.return-form__lines thead th {
+  background: linear-gradient(135deg, var(--rail) 0%, #1f2b4a 100%);
+}
+
+.data-table tbody tr,
+.ledger__table tbody tr,
+.pos__cart tbody tr {
+  transition: background 0.12s ease, box-shadow 0.12s ease;
+}
+
+/* A row you are pointing at takes the accent's tint and a marker down its left
+   edge — enough to hold your place across a wide table of figures. */
+.data-table tbody tr:hover,
+.pos__cart tbody tr:hover,
+.ledger__table tbody tr:hover {
+  background: var(--blue-soft);
+  box-shadow: inset 3px 0 0 var(--blue);
+}
+
+/* ---------- buttons ---------- */
+
+/* Every coloured button is a gradient of its own hue, and presses down by a
+   pixel. A flat rectangle that does not move is the clearest single sign of an
+   unfinished interface. */
+.form-actions button[type='submit'],
+.form-actions button:first-child,
+.page-header button,
+.inline-form button {
+  box-shadow: 0 1px 2px rgba(17, 26, 46, 0.08), 0 4px 12px rgba(17, 26, 46, 0.10);
+}
+
+.form-actions button[type='submit'],
+.form-actions button:first-child,
+.page-header button {
+  background: linear-gradient(135deg, var(--green) 0%, #22b86d 100%);
+  border-color: var(--green-deep);
+}
+
+.form-actions button[type='submit']:hover:not(:disabled),
+.form-actions button:first-child:hover:not(:disabled),
+.page-header button:hover:not(:disabled) {
+  background: linear-gradient(135deg, var(--green-deep) 0%, var(--green) 100%);
+  transform: translateY(-1px);
+}
+
+.inline-form button {
+  background: linear-gradient(135deg, var(--blue) 0%, #6d5ef0 100%);
+  border-color: var(--blue-deep);
+}
+
+.inline-form button:hover:not(:disabled) {
+  background: linear-gradient(135deg, var(--blue-deep) 0%, var(--blue) 100%);
+  transform: translateY(-1px);
+}
+
+.form-actions button[type='button']:last-child:not(:only-child) {
+  background: linear-gradient(135deg, var(--red) 0%, #ef5a5f 100%);
+  border-color: var(--red-deep);
+}
+
+.form-actions button[type='button']:last-child:not(:only-child):hover:not(:disabled) {
+  background: linear-gradient(135deg, var(--red-deep) 0%, var(--red) 100%);
+  transform: translateY(-1px);
+}
+
+/* A press is the one moment a button should look pushed, so the lift is
+   cancelled rather than merely reduced. */
+button:active:not(:disabled) { transform: translateY(1px); }
+
+/* One visible focus ring everywhere, for the keyboard. `:focus-visible` rather
+   than `:focus`, so a mouse click does not leave a ring behind it. */
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
+/* ---------- the period switch ---------- */
+
+/* Today / This week / This month is a segmented control, so it should look
+   like one: a tinted track with the chosen segment raised out of it. */
+.dashboard__periods {
+  background: var(--surface-alt);
+  box-shadow: var(--shadow);
+}
+
+.dashboard__periods button.is-active {
+  background: linear-gradient(135deg, var(--blue) 0%, #6d5ef0 100%);
+  box-shadow: 0 2px 8px var(--blue-glow);
+}
+
+.dashboard__periods button:hover:not(:disabled):not(.is-active) {
+  background: var(--blue-soft);
+  color: var(--blue);
+}
+
+/* ---------- inputs ---------- */
+
+/* The field being typed in is the only one that should be bright white; the
+   rest sit back on the tinted surface. */
+input, select, textarea {
+  background: var(--surface-alt);
+  transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+input:focus, select:focus, textarea:focus {
+  background: var(--surface);
+  box-shadow: 0 0 0 4px var(--blue-ring);
+}
+
+input:hover:not(:disabled):not(:focus),
+select:hover:not(:disabled):not(:focus),
+textarea:hover:not(:disabled):not(:focus) {
+  border-color: var(--ink-muted);
+}
+
+/* ---------- badges and notices ---------- */
+
+/* A "LOW" beside a stock figure has to catch the eye from the other side of
+   the counter, so the pill lifts slightly off the row. */
+.badge {
+  box-shadow: 0 1px 2px rgba(17, 26, 46, 0.06);
+}
+
+/* A message about money is worth a card, not a line of text. */
+.form-error, .form-success, .report-total,
+.purchase-form__notice, .return-form__notice {
+  box-shadow: var(--shadow);
+  border-left-width: 4px;
+}
+
+/* ---------- header ---------- */
+
+/* The top bar carries a hairline of the accent, tying it to the rail beneath
+   the shop's name. */
+.shell__header {
+  box-shadow: 0 1px 3px rgba(17, 26, 46, 0.05);
+  position: relative;
+}
+
+.shell__header::after {
+  content: '';
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--blue) 0%, #6d5ef0 40%, transparent 100%);
+  opacity: 0.55;
+}
+
+/* ---------- motion, for anyone who does not want it ---------- */
+
+/* Anyone whose system asks for less movement gets none of the lifts and slides
+   above. The colour scheme is unaffected — this turns off motion, not design. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+
+  .kpi:hover,
+  button:hover:not(:disabled),
+  button:active:not(:disabled) { transform: none; }
+}
+
+/* =============================================================================
+   Centred tables
+   =============================================================================
+   Opt-in, per table, via `data-table--centred` beside `data-table`.
+
+   The default stays as it is: text left, money right. A column of totals is read
+   DOWN, and a ragged right edge makes comparing figures needlessly hard. The
+   returns history is the exception — each row is read ACROSS ("this product,
+   this many, this much back"), so every value sits centred under its heading.
+
+   `td.numeric` has to be named explicitly. The rule that right-aligns money is
+   `.data-table td.numeric` (specificity 0,2,1); `.data-table--centred td` is
+   only (0,1,1) and would lose, leaving every amount still hard right while the
+   text moved. Naming `.numeric` here ties at (0,2,1) and wins on source order,
+   because this section is the last in the file.
+   ========================================================================== */
+
+.data-table--centred thead th,
+.data-table--centred tbody td,
+.data-table--centred th.numeric,
+.data-table--centred td.numeric {
+  text-align: center;
+}
+
+/* Tabular figures survive the move: the digits stay in their columns so
+   Rs 1,200.00 and Rs 950.00 still line up with each other. */
+.data-table--centred td.numeric {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Row buttons were pushed left by the cell's own alignment; centre them with
+   the rest and drop the trailing gap that only made sense left-aligned. */
+.data-table--centred td button {
+  margin: 0 0.15rem;
+}
+
+/* =============================================================================
+   What a brand sells
+   =============================================================================
+   The panel on the Brands screen where the owner ticks the categories a brand
+   carries — the setup step between creating a brand and adding products to it.
+   ========================================================================== */
+
+.brand-categories {
+  margin: 1rem 0;
+  padding: 1.25rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--blue);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lift);
+}
+
+.brand-categories h3 {
+  margin-top: 0;
+}
+
+/* A grid rather than a column: twenty categories in one list is a scroll, and the
+   owner is comparing them against each other, not reading them in order. */
+.brand-categories__list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
+  gap: 0.35rem 1rem;
+  margin: 0.85rem 0;
+  padding: 0.85rem;
+  background: var(--surface-alt);
+  border-radius: var(--radius-sm);
+}
+
+/* The whole label is the target, not just the box — this is tapped on a tablet
+   at the counter, where a 13px checkbox is a miss waiting to happen. */
+.brand-categories__list .checkbox {
+  padding: 0.35rem 0.5rem;
+  margin: 0;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+.brand-categories__list .checkbox:hover {
+  background: var(--blue-soft);
+  color: var(--blue);
+}
+
+.brand-categories__list .checkbox input {
+  cursor: pointer;
+}
+
+/* =============================================================================
+   Selling prices on a purchase
+   =============================================================================
+   Stocking a product is also what prices it, so the two selling prices sit in
+   their own bordered block rather than loose among the cost and quantity — the
+   shopkeeper is answering two different questions on one form.
+   ========================================================================== */
+
+.purchase-form__prices {
+  margin: 1rem 0 0;
+  padding: 0.85rem 1rem 1rem;
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--teal);
+  border-radius: var(--radius-sm);
+  background: var(--surface-alt);
+}
+
+.purchase-form__prices legend {
+  padding: 0 0.4rem;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--ink-soft);
+  letter-spacing: 0.02em;
+}
+
+.purchase-form__prices .field:first-of-type { margin-top: 0.25rem; }
+
+/* The field being typed into stays white against the tinted block. */
+.purchase-form__prices input { background: var(--surface); }

@@ -1,79 +1,140 @@
 import { useState } from 'react';
 import { ApiError } from '@/types/api';
+import type { DocumentType, ShareLink } from './documentApi';
 
-export type DocumentType = 'Invoice' | 'PaymentReceipt';
-
-export interface ShareLink {
-  shareUrl: string;
-  whatsAppUrl: string | null;
-  expiresAt: string;
-}
+export type { DocumentType } from './documentApi';
 
 export interface ShareButtonsProps {
   documentType: DocumentType;
   referenceId: number;
-  /** The customer's number as stored. Absent or unusable disables the WhatsApp button. */
+
+  /** The customer's number as stored. Absent or unusable means it cannot be sent as-is. */
   customerMobile?: string | null;
-  onDownload: (documentType: DocumentType, referenceId: number) => Promise<void>;
-  onCreateShareLink: (documentType: DocumentType, referenceId: number) => Promise<ShareLink>;
+
+  /**
+   * Whether this document belongs to a customer at all.
+   *
+   * A walk-in has no record, so there is nothing to fix and nothing to read a number from — the
+   * shopkeeper types one for this send. A known customer with a missing number is different: the
+   * fix belongs on their record, so we say so instead of taking a number that goes nowhere.
+   */
+  hasCustomer?: boolean;
+
+  onFetchDocument: (documentType: DocumentType, referenceId: number) => Promise<Blob>;
+  onCreateShareLink: (
+    documentType: DocumentType,
+    referenceId: number,
+    mobileNumber?: string | null,
+  ) => Promise<ShareLink>;
+
   /** Injected so tests do not navigate the jsdom window. */
   openUrl?: (url: string) => void;
+  printUrl?: (url: string) => void;
+}
+
+/** Hands the browser a file to save, from bytes already in memory. */
+function defaultDownload(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+
+  URL.revokeObjectURL(url);
+}
+
+/** Opens the document in a new window and asks it to print. */
+function defaultPrint(url: string) {
+  const opened = window.open(url, '_blank', 'noopener');
+
+  opened?.addEventListener('load', () => opened.print());
 }
 
 /**
- * Download and share actions for a receipt (FR-042, FR-044).
+ * Handing a customer their bill.
  *
- * <b>WhatsApp receives a link, not a file.</b> The wa.me scheme cannot carry an attachment, so
- * the message contains a URL to the receipt and the shopkeeper taps Send. When the customer has
- * no usable mobile number the button is disabled and says why, rather than opening WhatsApp
- * addressed to nobody.
+ * <p><b>Print uses the same bytes the customer receives.</b> Not a print-styled view of the same
+ * data — that is a second rendering, and two renderings drift. The failure worth preventing is a
+ * printed bill that disagrees with the sent one, discovered when a customer holds both.</p>
+ *
+ * <p><b>Both send routes are deep links.</b> `wa.me` and `sms:` prepare a message in an app the
+ * counter device already has; the shopkeeper taps Send. Nothing is dispatched by the shop, so
+ * there is no messaging account and no per-message cost.</p>
  */
 export function ShareButtons({
   documentType,
   referenceId,
   customerMobile,
-  onDownload,
+  hasCustomer = true,
+  onFetchDocument,
   onCreateShareLink,
   openUrl = (url) => window.open(url, '_blank', 'noopener'),
+  printUrl = defaultPrint,
 }: ShareButtonsProps) {
   const [isWorking, setIsWorking] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [typedNumber, setTypedNumber] = useState('');
+  const [expiresAt, setExpiresAt] = useState<string | null>(null);
 
-  const hasMobile = Boolean(customerMobile && customerMobile.trim().length > 0);
+  const storedNumber = customerMobile?.trim() ?? '';
+  const hasStoredNumber = storedNumber.length > 0;
 
-  async function handleDownload() {
+  // A walk-in types a number; a known customer's missing number is fixed on their record.
+  const asksForNumber = !hasStoredNumber && !hasCustomer;
+  const canSend = hasStoredNumber || (asksForNumber && typedNumber.trim().length > 0);
+
+  function report(caught: unknown, fallback: string) {
+    setError(caught instanceof ApiError ? caught.message : fallback);
+  }
+
+  async function withDocument(use: (blob: Blob) => void) {
     setError(null);
     setIsWorking(true);
 
     try {
-      await onDownload(documentType, referenceId);
+      use(await onFetchDocument(documentType, referenceId));
     } catch (caught) {
-      setError(
-        caught instanceof ApiError ? caught.message : 'Could not produce the receipt.',
-      );
+      // The sale is already saved; a document that could not be produced says nothing about it.
+      report(caught, 'Could not produce the document. The sale is saved — try again.');
     } finally {
       setIsWorking(false);
     }
   }
 
-  async function handleWhatsApp() {
+  const handleDownload = () =>
+    withDocument((blob) =>
+      defaultDownload(blob, `${documentType === 'Invoice' ? 'invoice' : 'receipt'}-${referenceId}.pdf`),
+    );
+
+  const handlePrint = () =>
+    withDocument((blob) => printUrl(URL.createObjectURL(blob)));
+
+  async function send(channel: 'whatsapp' | 'sms') {
     setError(null);
     setIsWorking(true);
 
     try {
-      const link = await onCreateShareLink(documentType, referenceId);
+      const link = await onCreateShareLink(
+        documentType,
+        referenceId,
+        asksForNumber ? typedNumber.trim() : null,
+      );
 
-      if (!link.whatsAppUrl) {
-        // The server could not make sense of the stored number.
-        setError('This customer has no usable mobile number on file.');
+      setExpiresAt(link.expiresAtUtc);
+
+      const url = channel === 'whatsapp' ? link.whatsAppUrl : link.smsUrl;
+
+      if (!url) {
+        // The server could not make the number dialable. Better to say so than to open a
+        // messaging app addressed to nobody.
+        setError('That mobile number could not be used. Check it and try again.');
         return;
       }
 
-      openUrl(link.whatsAppUrl);
+      openUrl(url);
     } catch (caught) {
-      setError(
-        caught instanceof ApiError ? caught.message : 'Could not create the share link.',
-      );
+      report(caught, 'Could not create the share link. Please try again.');
     } finally {
       setIsWorking(false);
     }
@@ -81,23 +142,57 @@ export function ShareButtons({
 
   return (
     <div className="share-buttons">
+      <button type="button" onClick={() => void handlePrint()} disabled={isWorking}>
+        Print
+      </button>
+
       <button type="button" onClick={() => void handleDownload()} disabled={isWorking}>
         Download PDF
       </button>
 
+      {asksForNumber && (
+        <div className="field share-buttons__number">
+          <label htmlFor={`shareMobile-${referenceId}`}>Mobile number</label>
+          <input
+            id={`shareMobile-${referenceId}`}
+            inputMode="tel"
+            placeholder="03001234567"
+            value={typedNumber}
+            onChange={(event) => setTypedNumber(event.target.value)}
+          />
+          <small className="field__hint">Used for this message only — no customer is created.</small>
+        </div>
+      )}
+
       <button
         type="button"
-        onClick={() => void handleWhatsApp()}
-        disabled={isWorking || !hasMobile}
-        title={hasMobile ? undefined : 'No mobile number on file for this customer'}
+        onClick={() => void send('whatsapp')}
+        disabled={isWorking || !canSend}
+        title={canSend ? undefined : 'No mobile number to send to'}
       >
         Send on WhatsApp
       </button>
 
-      {!hasMobile && (
+      <button
+        type="button"
+        onClick={() => void send('sms')}
+        disabled={isWorking || !canSend}
+        title={canSend ? undefined : 'No mobile number to send to'}
+      >
+        Send by SMS
+      </button>
+
+      {/* Only a customer ON FILE can have their record fixed; a walk-in never will. */}
+      {!hasStoredNumber && hasCustomer && (
         <span className="share-buttons__hint">
           Add a mobile number to this customer to send the receipt.
         </span>
+      )}
+
+      {expiresAt && (
+        <small className="share-buttons__expiry" data-testid="share-expiry">
+          Link works until {new Date(expiresAt).toLocaleDateString('en-PK')}.
+        </small>
       )}
 
       {error && (

@@ -6,10 +6,14 @@ export interface ExpenseCategory {
   name: string;
 }
 
+/** Where the money came from. Only Till leaves the cash drawer. */
+export type PaymentSource = 'Till' | 'Bank';
+
 export interface ExpenseFormValues {
   categoryId: number;
   amount: number;
   expenseDate: string;
+  paymentSource: PaymentSource;
   note: string | null;
 }
 
@@ -32,6 +36,10 @@ export function ExpenseForm({ categories, onSubmit }: ExpenseFormProps) {
   const [categoryId, setCategoryId] = useState<number>(categories[0]?.id ?? 0);
   const [amount, setAmount] = useState<number>(0);
   const [expenseDate, setExpenseDate] = useState<string>(today());
+
+  // Starts unanswered on purpose. Defaulting to Till would quietly drop every bank payment into
+  // the drawer calculation, which is the one figure this field exists to keep honest.
+  const [paymentSource, setPaymentSource] = useState<PaymentSource | ''>('');
   const [note, setNote] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [formError, setFormError] = useState<string | null>(null);
@@ -51,6 +59,10 @@ export function ExpenseForm({ categories, onSubmit }: ExpenseFormProps) {
 
     if (!expenseDate) {
       next.expenseDate = 'A date is required.';
+    }
+
+    if (!paymentSource) {
+      next.paymentSource = 'Say whether this was paid from the till or the bank.';
     }
 
     setErrors(next);
@@ -74,12 +86,16 @@ export function ExpenseForm({ categories, onSubmit }: ExpenseFormProps) {
         categoryId,
         amount,
         expenseDate,
+        paymentSource: paymentSource as PaymentSource,
         note: note.trim() || null,
       });
 
       setSaved(true);
       setAmount(0);
       setNote('');
+      // Cleared with the amount: the next expense is a separate question, and a remembered
+      // answer here would be one the shopkeeper stops reading.
+      setPaymentSource('');
     } catch (error) {
       setFormError(
         error instanceof ApiError ? error.message : 'Could not save the expense. Please try again.',
@@ -145,6 +161,25 @@ export function ExpenseForm({ categories, onSubmit }: ExpenseFormProps) {
           aria-invalid={errors.expenseDate !== undefined}
         />
         {errors.expenseDate && <span className="field-error">{errors.expenseDate}</span>}
+      </div>
+
+      <div className="field">
+        <label htmlFor="expensePaymentSource">Paid from</label>
+        <select
+          id="expensePaymentSource"
+          value={paymentSource}
+          onChange={(event) => setPaymentSource(event.target.value as PaymentSource | '')}
+          aria-invalid={errors.paymentSource !== undefined}
+        >
+          {/* No pre-selected answer: the blank is what makes the shopkeeper decide. */}
+          <option value="">Choose…</option>
+          <option value="Till">Till (cash)</option>
+          <option value="Bank">Bank</option>
+        </select>
+        {errors.paymentSource && <span className="field-error">{errors.paymentSource}</span>}
+        <small className="field__hint">
+          Money taken from the till is subtracted at day close; bank payments never touch it.
+        </small>
       </div>
 
       <div className="field">

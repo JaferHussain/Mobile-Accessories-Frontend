@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { MemoryRouter } from 'react-router-dom';
 import { PosPage } from '@/features/pos/PosPage';
 import { productApi } from '@/features/products/productApi';
 import { AuthProvider } from '@/features/auth/AuthContext';
@@ -27,11 +28,13 @@ const salesman: AuthUser = { id: 2, username: 'salesman', fullName: 'Bilal', rol
 
 const notFound = () => new ApiError('NOT_FOUND', 'No product found.', 404);
 
-function renderPos() {
+function renderPos(initialEntries: Array<string | { pathname: string; state?: unknown }> = ['/pos']) {
   return render(
-    <AuthProvider initialUser={salesman}>
-      <PosPage />
-    </AuthProvider>,
+    <MemoryRouter initialEntries={initialEntries}>
+      <AuthProvider initialUser={salesman}>
+        <PosPage />
+      </AuthProvider>
+    </MemoryRouter>,
   );
 }
 
@@ -74,7 +77,7 @@ describe('PosPage lookup', () => {
     expect(await screen.findByText(/something went wrong/i)).toBeInTheDocument();
   });
 
-  it('adds the product when the improved search finds one', async () => {
+  it('offers what the improved search found, without adding it', async () => {
     vi.mocked(productApi.search).mockResolvedValue({
       items: [
         {
@@ -97,8 +100,62 @@ describe('PosPage lookup', () => {
     await lookUp('c type');
 
     expect(await screen.findByText('Type-C Braided Cable')).toBeInTheDocument();
+
+    // Feature 005: several candidates are fetched, not one, and the salesman picks. Asking for
+    // a single row is what made the counter add the first hit sight-unseen.
     expect(productApi.search).toHaveBeenCalledWith(
-      expect.objectContaining({ search: 'c type', pageSize: 1 }),
+      expect.objectContaining({ search: 'c type', pageSize: 8 }),
     );
+    expect(screen.getByTestId('pos-result-1')).toBeInTheDocument();
+    expect(screen.queryByTestId('cart-line-1')).not.toBeInTheDocument();
+  });
+});
+
+describe('arriving from a product\'s Sell button', () => {
+  it('starts the search box with the product the owner or salesman picked', async () => {
+    // The Products screen hands over what to look up via navigation state; PosPage's job is
+    // only to read it and hand it to the search box, exactly as if it had been typed.
+    renderPos([{ pathname: '/pos', state: { prefillTerm: '8901234567890' } }]);
+
+    expect(await screen.findByLabelText(/scan or search/i)).toHaveValue('8901234567890');
+  });
+
+  it('runs the search immediately rather than waiting for another Enter', async () => {
+    vi.mocked(productApi.byBarcode).mockResolvedValue({
+      id: 1,
+      name: 'Type-C Braided Cable',
+      categoryId: 1,
+      category: 'Cables',
+      salePrice: 1100,
+      quantityOnHand: 10,
+      isLowStock: false,
+      isActive: true,
+    } as never);
+
+    renderPos([{ pathname: '/pos', state: { prefillTerm: '8901234567890' } }]);
+
+    // A round trip back from Products only to make the salesman press Enter again would be a
+    // worse experience than not having the Sell button at all.
+    expect(await screen.findByTestId('cart-line-1')).toBeInTheDocument();
+  });
+
+  it('does not repeat the search if the counter re-renders afterwards', async () => {
+    vi.mocked(productApi.byBarcode).mockResolvedValue({
+      id: 1,
+      name: 'Type-C Braided Cable',
+      categoryId: 1,
+      category: 'Cables',
+      salePrice: 1100,
+      quantityOnHand: 10,
+      isLowStock: false,
+      isActive: true,
+    } as never);
+
+    renderPos([{ pathname: '/pos', state: { prefillTerm: '8901234567890' } }]);
+    await screen.findByTestId('cart-line-1');
+
+    // Scanning the SAME code again is a legitimate second unit; the guard is against the
+    // hand-off itself repeating, not against the salesman using the counter normally.
+    expect(productApi.byBarcode).toHaveBeenCalledTimes(1);
   });
 });

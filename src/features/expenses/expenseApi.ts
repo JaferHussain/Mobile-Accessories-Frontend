@@ -8,6 +8,8 @@ export interface Expense {
   categoryName: string;
   amount: number;
   expenseDateUtc: string;
+  /** Null only on rows recorded before this was asked for. Only Till leaves the cash drawer. */
+  paymentSource?: 'Till' | 'Bank' | null;
   note?: string | null;
 }
 
@@ -29,6 +31,7 @@ export const expenseApi = {
         amount: values.amount,
         // The form gives a local date; send it as an instant the server can place in a period.
         expenseDate: new Date(`${values.expenseDate}T12:00:00`).toISOString(),
+        paymentSource: values.paymentSource,
         note: values.note,
       }),
     );

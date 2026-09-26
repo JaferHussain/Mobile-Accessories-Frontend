@@ -1,4 +1,6 @@
 import { formatPkr } from '@/lib/money';
+import { ShareButtons } from '@/features/documents/ShareButtons';
+import type { DocumentType, ShareLink } from '@/features/documents/documentApi';
 import type { Customer, CustomerSummary, LedgerEntry } from './customerApi';
 
 export interface CustomerLedgerProps {
@@ -6,6 +8,36 @@ export interface CustomerLedgerProps {
   summary: CustomerSummary;
   entries: LedgerEntry[];
   onReceivePayment: () => void;
+
+  /**
+   * Sharing, wired in by the page. Optional so the register stays a function of its own data and
+   * remains testable on its own, which is how every existing ledger test renders it.
+   */
+  onFetchDocument?: (documentType: DocumentType, referenceId: number) => Promise<Blob>;
+  onCreateShareLink?: (
+    documentType: DocumentType,
+    referenceId: number,
+    mobileNumber?: string | null,
+  ) => Promise<ShareLink>;
+}
+
+/**
+ * Which ledger rows have a document behind them.
+ *
+ * A sale and a payment do. An opening balance was brought forward from the paper register and a
+ * return or adjustment is a correction — none of those has a receipt to send, and offering one
+ * would promise a document that does not exist.
+ */
+function documentFor(entry: LedgerEntry): DocumentType | null {
+  if (entry.referenceId === null || entry.referenceId === undefined) {
+    return null;
+  }
+
+  if (entry.entryType === 'Invoice') {
+    return 'Invoice';
+  }
+
+  return entry.entryType === 'Payment' ? 'PaymentReceipt' : null;
 }
 
 const ENTRY_LABELS: Record<LedgerEntry['entryType'], string> = {
@@ -39,7 +71,10 @@ export function CustomerLedger({
   summary,
   entries,
   onReceivePayment,
+  onFetchDocument,
+  onCreateShareLink,
 }: CustomerLedgerProps) {
+  const canShare = Boolean(onFetchDocument && onCreateShareLink);
   const owes = summary.totalOutstanding > 0;
 
   return (
@@ -81,6 +116,11 @@ export function CustomerLedger({
               <th scope="col">Bill</th>
               <th scope="col">Paid</th>
               <th scope="col">Balance</th>
+              {canShare && (
+                <th scope="col">
+                  <span className="visually-hidden">Give to customer</span>
+                </th>
+              )}
             </tr>
           </thead>
           <tbody>
@@ -94,6 +134,25 @@ export function CustomerLedger({
                 <td>{entry.billAmount > 0 ? formatPkr(entry.billAmount) : '—'}</td>
                 <td>{entry.paidAmount > 0 ? formatPkr(entry.paidAmount) : '—'}</td>
                 <td data-testid={`balance-${entry.id}`}>{formatPkr(entry.balanceAfter)}</td>
+
+                {canShare && (
+                  <td>
+                    {/* The row already knows which document it is and which one — entryType and
+                        referenceId have been here since the register was built. */}
+                    {documentFor(entry) && (
+                      <ShareButtons
+                        documentType={documentFor(entry)!}
+                        referenceId={entry.referenceId!}
+                        customerMobile={customer.mobileNumber}
+                        // They are on file, so a number typed here could silently redirect a
+                        // known customer's receipt. The fix belongs on their record.
+                        hasCustomer
+                        onFetchDocument={onFetchDocument!}
+                        onCreateShareLink={onCreateShareLink!}
+                      />
+                    )}
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>
