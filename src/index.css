@@ -995,18 +995,93 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
   margin: 1rem 0;
 }
 
-.share-buttons button:first-child::before { content: '⬇ '; }
+/* Named, never positional: the Share button now sits inside its own wrapper, and a rule like
+   `button:last-of-type` would quietly land on Download PDF instead. */
+.share-buttons__print::before { content: '🖨 '; }
+.share-buttons__download::before { content: '⬇ '; }
+.share-buttons__hint { color: var(--ink-muted); font-size: 0.78rem; }
 
-.share-buttons button:last-of-type {
+/* One button, and the choice of app beneath it — Share on a bill, Send reminder on an account. */
+.send-menu { position: relative; display: inline-flex; }
+
+.send-menu .send-menu__toggle {
   background: #25d366;
   border-color: #25d366;
   color: #ffffff;
   font-weight: 600;
 }
 
-.share-buttons button:last-of-type::before { content: '💬 '; }
-.share-buttons button:last-of-type:disabled { background: var(--surface-alt); color: var(--ink-muted); border-color: var(--border-firm); }
-.share-buttons__hint { color: var(--ink-muted); font-size: 0.78rem; }
+.send-menu .send-menu__toggle:hover:not(:disabled) { background: #1ebe5a; border-color: #1ebe5a; }
+.send-menu .send-menu__toggle--share::before { content: '📤 '; }
+.send-menu .send-menu__toggle--remind::before { content: '🔔 '; }
+
+.send-menu__panel {
+  position: absolute;
+  top: calc(100% + 0.4rem);
+  right: 0;
+  z-index: 20;
+  width: max-content;
+  max-width: min(20rem, calc(100vw - 2rem));
+  padding: 0.85rem 1rem;
+  background: var(--surface);
+  border: 1px solid var(--border-firm);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  text-align: left;
+}
+
+.send-menu__prompt { margin: 0; font-size: 0.85rem; font-weight: 600; color: var(--ink); }
+.send-menu__options { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+
+.send-menu .send-menu__whatsapp {
+  background: #25d366;
+  border-color: #25d366;
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.send-menu .send-menu__whatsapp::before { content: '💬 '; }
+
+.send-menu .send-menu__sms {
+  background: var(--surface);
+  border-color: var(--border-firm);
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.send-menu .send-menu__sms::before { content: '✉ '; }
+
+/* Outrank `.ledger__header button:hover`, which would otherwise paint both options dark green. */
+.send-menu .send-menu__whatsapp:hover:not(:disabled) { background: #1ebe5a; border-color: #1ebe5a; }
+.send-menu .send-menu__sms:hover:not(:disabled) { background: var(--surface-alt); color: var(--ink); }
+
+.send-menu .send-menu__options button:disabled {
+  background: var(--surface-alt);
+  color: var(--ink-muted);
+  border-color: var(--border-firm);
+}
+
+/* The account's own actions, together on the right of the customer's header. */
+.ledger__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: flex-end;
+  gap: 0.6rem;
+}
+
+.reminder-buttons { display: flex; flex-direction: column; align-items: flex-end; gap: 0.35rem; }
+.reminder-buttons__note { color: var(--ink-muted); font-size: 0.78rem; }
+
+@media (max-width: 640px) {
+  .ledger__header { flex-direction: column; }
+  .ledger__actions { justify-content: flex-start; }
+  .reminder-buttons { align-items: flex-start; }
+  .send-menu__panel { right: auto; left: 0; }
+}
 
 /* =============================================================================
    Admin

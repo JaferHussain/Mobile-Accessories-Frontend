@@ -184,6 +184,7 @@ describe('sharing from the counter', () => {
     await sell(user, /bank transfer/i);
 
     expect(screen.getByRole('button', { name: /print/i })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /^share$/i }));
     expect(screen.getByRole('button', { name: /whatsapp/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /sms/i })).toBeInTheDocument();
   });
@@ -199,6 +200,7 @@ describe('sharing from the counter', () => {
     await sell(user, /bank transfer/i);
 
     // This sale had no customer, so there is no record to read a number from.
+    await user.click(screen.getByRole('button', { name: /^share$/i }));
     expect(screen.getByLabelText(/mobile number/i)).toBeInTheDocument();
   });
 });

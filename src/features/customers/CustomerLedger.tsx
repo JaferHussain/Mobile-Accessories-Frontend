@@ -1,7 +1,8 @@
 import { formatPkr } from '@/lib/money';
 import { ShareButtons } from '@/features/documents/ShareButtons';
 import type { DocumentType, ShareLink } from '@/features/documents/documentApi';
-import type { Customer, CustomerSummary, LedgerEntry } from './customerApi';
+import { ReminderButtons } from './ReminderButtons';
+import type { Customer, CustomerSummary, LedgerEntry, PaymentReminder } from './customerApi';
 
 export interface CustomerLedgerProps {
   customer: Customer;
@@ -19,6 +20,9 @@ export interface CustomerLedgerProps {
     referenceId: number,
     mobileNumber?: string | null,
   ) => Promise<ShareLink>;
+
+  /** A payment reminder. Optional for the same reason; offered only while money is owed. */
+  onCreateReminder?: (customerId: number) => Promise<PaymentReminder>;
 }
 
 /**
@@ -73,6 +77,7 @@ export function CustomerLedger({
   onReceivePayment,
   onFetchDocument,
   onCreateShareLink,
+  onCreateReminder,
 }: CustomerLedgerProps) {
   const canShare = Boolean(onFetchDocument && onCreateShareLink);
   const owes = summary.totalOutstanding > 0;
@@ -85,9 +90,21 @@ export function CustomerLedger({
           {customer.mobileNumber && <p className="ledger__mobile">{customer.mobileNumber}</p>}
         </div>
 
-        <button type="button" onClick={onReceivePayment} disabled={!owes}>
-          Receive payment
-        </button>
+        {/* Everything done TO the account sits together on the right: take money, or ask for it. */}
+        <div className="ledger__actions">
+          <button type="button" onClick={onReceivePayment} disabled={!owes}>
+            Receive payment
+          </button>
+
+          {/* A reminder for nothing owed is a message the customer should never receive. */}
+          {owes && onCreateReminder && (
+            <ReminderButtons
+              customerId={customer.id}
+              customerMobile={customer.mobileNumber}
+              onCreateReminder={onCreateReminder}
+            />
+          )}
+        </div>
       </header>
 
       <dl className="ledger__summary">

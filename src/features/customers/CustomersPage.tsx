@@ -107,6 +107,7 @@ function CustomerDetail({ customer, onBack }: { customer: Customer; onBack: () =
                 : documentApi.paymentReceiptPdf(referenceId)
             }
             onCreateShareLink={documentApi.createShareLink}
+            onCreateReminder={customerApi.reminder}
           />
         )}
       </QueryState>
