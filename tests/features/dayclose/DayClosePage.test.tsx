@@ -22,6 +22,7 @@ const openDay: DayClosing = {
   openingFloat: 2000,
   cashSales: 18_400,
   cashRecovery: 3500,
+  cashFromSalesmen: 0,
   cashRefunds: 590,
   cashPaidOut: 1200,
   cashToSuppliers: 4000,
@@ -72,6 +73,16 @@ describe('DayClosePage before counting', () => {
     // Kept apart from expenses: a shopkeeper reading a short wants to know which one moved.
     expect(screen.getByTestId('cash-to-suppliers')).toHaveTextContent('Rs 4,000.00');
     expect(screen.getByTestId('expected-cash')).toHaveTextContent('Rs 18,110.00');
+  });
+
+  it('shows the cash a salesman handed over as money into the drawer', async () => {
+    // His market cash is not in "Cash sales" — it joins the drawer only once he hands it over.
+    vi.mocked(dayCloseApi.preview).mockResolvedValue({ ...openDay, cashFromSalesmen: 2500, expectedCash: 20_610 });
+
+    renderPage();
+
+    expect(await screen.findByTestId('cash-from-salesmen')).toHaveTextContent('Rs 2,500.00');
+    expect(screen.getByTestId('expected-cash')).toHaveTextContent('Rs 20,610.00');
   });
 
   it('asks only for what the shopkeeper can actually know', async () => {

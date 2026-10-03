@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { formatPkr, roundMoney } from '@/lib/money';
 import { ApiError } from '@/types/api';
 import {
@@ -43,6 +43,12 @@ export interface CheckoutModalProps {
   /** The bill being settled. The server recomputes it; this is what the customer is told. */
   total: number;
   canSellOnCredit: boolean;
+  /**
+   * A field salesman: udhaar is offered only once one of the OWNER'S udhaar customers is chosen.
+   * The server refuses anything else regardless; this keeps a choice that would only be refused
+   * off the screen.
+   */
+  udhaarCustomersOnly?: boolean;
   onSearchCustomers: (term: string) => Promise<CustomerSummary[]>;
   onCreateCustomer: (name: string, mobileNumber: string | null) => Promise<{ id: number; name: string }>;
   onConfirm: (details: CheckoutDetails) => Promise<void>;
@@ -62,6 +68,7 @@ const TRANSFER_METHODS: readonly PaymentMethod[] = [
 export function CheckoutModal({
   total,
   canSellOnCredit,
+  udhaarCustomersOnly = false,
   onSearchCustomers,
   onCreateCustomer,
   onConfirm,
@@ -83,6 +90,18 @@ export function CheckoutModal({
 
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+
+  // The owner may give udhaar to anyone; a field salesman only to a customer the owner marked.
+  const creditOpen =
+    canSellOnCredit ||
+    (udhaarCustomersOnly && customerMode === 'existing' && selected?.creditAllowed === true);
+
+  // Choosing a different customer can close udhaar again — never leave it selected behind the screen.
+  useEffect(() => {
+    if (!creditOpen && (paymentMethod === 'Credit' || paymentMethod === 'Partial')) {
+      setPaymentMethod('Cash');
+    }
+  }, [creditOpen, paymentMethod]);
 
   const isTransfer = TRANSFER_METHODS.includes(paymentMethod);
   const isPartial = paymentMethod === 'Partial';
@@ -280,6 +299,7 @@ export function CheckoutModal({
                         {/* What they already owe, before this sale adds to it. */}
                         {found.outstandingBalance > 0 &&
                           ` · owes ${formatPkr(found.outstandingBalance)}`}
+                        {udhaarCustomersOnly && found.creditAllowed && ' · udhaar customer'}
                       </span>
                       <button type="button" onClick={() => setSelected(found)}>
                         {selected?.id === found.id ? 'Selected' : 'Select'}
@@ -321,7 +341,7 @@ export function CheckoutModal({
         <fieldset className="checkout__payment">
           <legend>Payment</legend>
 
-          {paymentMethodsFor(canSellOnCredit).map((method) => (
+          {paymentMethodsFor(creditOpen).map((method) => (
             <label key={method.value} className="radio">
               <input
                 type="radio"
@@ -336,8 +356,12 @@ export function CheckoutModal({
             </label>
           ))}
 
-          {!canSellOnCredit && (
-            <small className="field__hint">Only the owner can approve udhaar.</small>
+          {!creditOpen && (
+            <small className="field__hint">
+              {udhaarCustomersOnly
+                ? "Udhaar is only for the owner's udhaar customers — choose one under Existing customer."
+                : 'Only the owner can approve udhaar.'}
+            </small>
           )}
 
           {/* The money came from somewhere else, so there is something to record. Cash in the

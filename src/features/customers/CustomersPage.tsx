@@ -6,6 +6,7 @@ import { documentApi } from '@/features/documents/documentApi';
 import { ShareButtons } from '@/features/documents/ShareButtons';
 import { ReceivePaymentModal } from './ReceivePaymentModal';
 import { OpeningBalanceForm } from './OpeningBalanceForm';
+import { UdhaarCustomerToggle } from './UdhaarCustomerToggle';
 import { useAuth } from '@/features/auth/AuthContext';
 import { QueryState } from '@/components/QueryState';
 import { formatPkr } from '@/lib/money';
@@ -111,6 +112,8 @@ function CustomerDetail({ customer, onBack }: { customer: Customer; onBack: () =
           />
         )}
       </QueryState>
+
+      {isAdmin && <UdhaarCustomerToggle key={shown.id} customer={shown} />}
 
       {isAdmin && !isSettingOpening && (
         <button type="button" onClick={() => setIsSettingOpening(true)}>
@@ -261,7 +264,10 @@ export function CustomersPage() {
               <tr key={customer.id}>
                 <td>{customer.name}</td>
                 <td>{customer.mobileNumber ?? '—'}</td>
-                <td>{customer.saleType}</td>
+                <td>
+                  {customer.saleType}
+                  {customer.creditAllowed && <span className="badge"> · udhaar customer</span>}
+                </td>
                 <td className={`numeric${customer.outstandingBalance > 0 ? ' owing' : ''}`}>
                   {formatPkr(customer.outstandingBalance)}
                 </td>

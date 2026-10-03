@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { MemoryRouter } from 'react-router-dom';
 import { SuppliersPage } from '@/features/suppliers/SuppliersPage';
 import { supplierApi, type Supplier } from '@/features/suppliers/supplierApi';
 
@@ -49,7 +50,10 @@ function renderPage() {
 
   render(
     <QueryClientProvider client={client}>
-      <SuppliersPage />
+      {/* A router, for the row's Ledger button. */}
+      <MemoryRouter>
+        <SuppliersPage />
+      </MemoryRouter>
     </QueryClientProvider>,
   );
 }

@@ -106,6 +106,8 @@ export interface CustomerSummary {
   name: string;
   mobileNumber?: string | null;
   outstandingBalance: number;
+  /** Marked by the owner as an udhaar customer: a field salesman may sell to them on credit. */
+  creditAllowed?: boolean;
 }
 
 export const posApi = {

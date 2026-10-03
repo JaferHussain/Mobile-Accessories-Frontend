@@ -20,7 +20,14 @@ export interface Product {
    * saleType asked for. Resolved by the server per request; it is not a stored column.
    */
   salePrice: number;
+  /** What the shop OWNS — shelf and salesmen's bags together. Low stock is judged on this. */
   quantityOnHand: number;
+  /** On the shelf: what the counter can sell. Owned, less what salesmen carry. */
+  atShop?: number;
+  /** Carried by field salesmen between them. */
+  withSalesmen?: number;
+  /** For a field salesman only: what HE carries — all he can sell. Null for everyone else. */
+  inYourBag?: number | null;
   isLowStock: boolean;
   isActive: boolean;
 

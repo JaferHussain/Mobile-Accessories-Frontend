@@ -65,6 +65,81 @@ cd ../backend && dotnet test            # and so must the backend
   `ClientDocumentRouteTests` holds these exact strings.
 - **A walk-in types a number for one send**; a typed number never overrides a stored one.
 
+## Transaction proofs
+
+- **One control everywhere:** `ProofAttachment` (Attach proof / View proof / Replace), on the
+  customer ledger, supplier ledger, Invoices dialog, sale return history, expenses list and the
+  **Proof missing** page (Money, Admin only). Shown only when `needsProof(method)` — the four
+  transfer methods; never Cash, Credit or Partial.
+- **A Proof column appears only when some row needs it**, so a cash-only register looks as it did.
+- **Refunded by** (sale return) and **Paid by** (bank expense) start unanswered, like Paid from:
+  a default would put transfer money into the day-close drawer count.
+- **View opens a blob, never a URL to the file** — proofs are only reachable through the signed-in
+  `/api/proofs/{kind}/{id}` route.
+
+## Shop accounts and expenses
+
+- **`accountsFor(accounts, method)`** keeps impossible accounts out of every "From account"
+  dropdown (a JazzCash payment is offered JazzCash accounts only; hidden ones never). The server
+  checks regardless — this is only so the list never offers a wrong choice.
+- **The expense form asks one question, "Paid by"**, starting unanswered. The transfer details
+  (account, transaction ID, proof) appear only for a non-cash answer. The page saves the expense,
+  then attaches the proof; `ExpenseSaveOutcome` tells the form whether the proof made it.
+- **View proof opens a popup on the same page** (`ProofAttachment`), never a new tab — the image is
+  loaded only when asked for.
+
+## The team
+
+- **Team** (beside Dashboard, Admin only): a card per person and the watch list for the chosen
+  days; each card opens that person's activity timeline (`/team/:userId`). Every figure is the
+  server's.
+- **People** (Admin): a member of staff has a **job** — Counter (shopkeeper) or Field sales
+  (salesman). The owner has none. Changing a job is a dropdown in the list.
+- **Test timing:** `tests/setup.ts` sets `asyncUtilTimeout: 4000` and `vite.config.ts` sets
+  `testTimeout: 15_000`. Typing-heavy tests pass in well under a second alone but failed at random
+  under full-suite load with the 1 s / 5 s defaults. More time changes no assertion.
+
+## Commission
+
+- **Commission** (`/commissions/:userId`, Admin): earned / waiting for udhaar / paid / owed, each
+  product line with the owner's price and the price it fetched, payouts, and Pay commission (the
+  amount starts at what is owed; how it was paid starts unanswered). Reached from a field
+  salesman's Team card. Every figure is the server's — never recompute commission in TypeScript.
+
+## The salesman in the market
+
+- **Checkout** takes `udhaarCustomersOnly` (PosPage passes it for `user.job === 'FieldSales'`):
+  Udhaar and Part payment are offered only once one of the owner's **udhaar customers** is chosen
+  under Existing customer, which the pick list marks. Choosing another customer closes it again and
+  drops a Credit/Partial choice back to Cash. The server refuses anything else regardless.
+- **Udhaar customer** tick-box (`UdhaarCustomerToggle`) on a customer's page, owner only; the list
+  says "udhaar customer" beside the type. The update endpoint replaces contact details too, so
+  `setCreditAllowed` sends them back as they stand.
+- **Cash with him** (`/salesman-cash/:userId`, Admin): collected / refunded / handed over / with him
+  now, every movement, and **Received from salesman** — amount starts at what he holds, "Received
+  as" starts unanswered (cash joins the drawer, a transfer does not). Reached from his Team card.
+- **Day close** shows "Cash received from salesmen" as money into the drawer.
+- **Stock with him** (`/salesman-stock/:userId`, Admin, from the Team card's **Stock →**): what he
+  carries, a "Brought back" quantity per line with **Take back into the shop**, **Issue stock** (find
+  a product, Add, set how many, note), and every movement. My day shows **My stock**. Issued goods
+  are still the shop's — the server refuses the counter selling them and the salesman selling what
+  he was not issued; the screens only word the refusal.
+- **My day** (`/my-day`, first in the rail for `job === 'FieldSales'` only — `fieldSalesOnly` on the
+  nav item): My sales for Today / This month, and for the field salesman My cash and My commission
+  (all-time — what he holds and is owed now), then what he did. Phone-first: one column under
+  640px. Built on `/my-day`, `/salesman-cash/me` and `/commissions/me`; the latter two are never
+  requested for the counter shopkeeper. The counter's rail is unchanged, and `/` still lands on the
+  counter for everyone.
+
+## Stock figures — each person reads what they can sell from
+
+`StockCount` (components) words the server's figures, and `sellableQuantity` picks the number that
+decides "Add to cart": the salesman sees **"3 with you"**, the counter **"6 in shop · +4 with
+salesman"**, the owner's catalogue (`owned`) **"10 owned · 6 in shop · 4 with salesman"**. Used on
+the New sale cards, the Products table, grid and detail. Purchases, reports and the dashboard keep
+the owned total on purpose — a purchase re-costs every owned unit, and reports count what the shop
+owns.
+
 ## Traps
 
 | Trap | What happens | Guard |
@@ -72,7 +147,8 @@ cd ../backend && dotnet test            # and so must the backend
 | Posting `FormData` through the API client | The client forces `Content-Type: application/json`; the upload loses its boundary and the server answers 415 | The request interceptor deletes that header when the body is `FormData` |
 | An error from a Blob request | A failed PDF reports a generic "unexpected error" while the server's reason sits unread inside the Blob | The response interceptor reads the error body back out of the Blob |
 | Adding a route without a rail icon | Icons live in `index.css` keyed on `href`; a new module ships looking unfinished | `AppShell.test.tsx` fails naming any link with no `::before` rule |
-| "Tidying away" one-item rail groups | **Sell** holds only New sale; for Staff, **Inventory** holds only Products — both deliberate | Three `AppShell` tests pin the groups |
+| "Tidying" the rail groups | **Sell** = New sale + Sale return; **Purchasing** = Purchases, Suppliers, Supplier ledger, Purchase return (Admin-only). The owner split the old Returns screen so each return sits with the trade it reverses. For Staff, **Inventory** holds only Products — deliberate | `AppShell` tests pin the groups; `/returns` redirects to `/sale-returns` |
 | Rendering a full-size product image in a list | Invisible locally; stalls the Products grid over the shop's connection | `ProductPicture` loads the thumbnail unless passed `size="full"` (only `ProductDetail`) |
 | Re-adding the "local brand" UI | Removed at the owner's request; a brand is just a name | Three tests pin its absence — ask before touching |
+| A date from `toISOString().slice(0, 10)` or the device's local date | The UTC date is still yesterday until 5 a.m. in the shop; mixing it with a local date made the Reports range run BACKWARDS on the 1st of every month (from the 1st to the 30th) and show nothing, and dated early-morning expenses a day early | `shopToday()` / `shopMonthStart()` in `lib/shopDay.ts` — Asia/Karachi, one clock. `shopDay.test.ts` pins the 1 a.m. case |
 | Putting a price or quantity on the product form | Two places to price an item; they disagree the first time the wrong one is used | Prices are set by a purchase only |

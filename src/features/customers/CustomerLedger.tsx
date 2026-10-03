@@ -2,6 +2,8 @@ import { formatPkr } from '@/lib/money';
 import { ShareButtons } from '@/features/documents/ShareButtons';
 import type { DocumentType, ShareLink } from '@/features/documents/documentApi';
 import { ReminderButtons } from './ReminderButtons';
+import { ProofAttachment } from '@/features/proofs/ProofAttachment';
+import { needsProof, type ProofKind } from '@/features/proofs/proofApi';
 import type { Customer, CustomerSummary, LedgerEntry, PaymentReminder } from './customerApi';
 
 export interface CustomerLedgerProps {
@@ -44,6 +46,22 @@ function documentFor(entry: LedgerEntry): DocumentType | null {
   return entry.entryType === 'Payment' ? 'PaymentReceipt' : null;
 }
 
+/**
+ * Which proof a ledger line carries: a sale's or a payment's, and only when it was paid by
+ * transfer. Cash was counted into the drawer; a return or adjustment moved no money here.
+ */
+function proofKindFor(entry: LedgerEntry): ProofKind | null {
+  if (entry.referenceId == null || !needsProof(entry.paymentMethod)) {
+    return null;
+  }
+
+  if (entry.entryType === 'Invoice') {
+    return 'sale';
+  }
+
+  return entry.entryType === 'Payment' ? 'customer-payment' : null;
+}
+
 const ENTRY_LABELS: Record<LedgerEntry['entryType'], string> = {
   Invoice: 'Sale',
   Payment: 'Payment',
@@ -80,6 +98,9 @@ export function CustomerLedger({
   onCreateReminder,
 }: CustomerLedgerProps) {
   const canShare = Boolean(onFetchDocument && onCreateShareLink);
+  // A Proof column only when some line was paid by transfer — a cash-only register looks as it
+  // always did.
+  const showsProof = entries.some((entry) => proofKindFor(entry) !== null);
   const owes = summary.totalOutstanding > 0;
 
   return (
@@ -133,6 +154,7 @@ export function CustomerLedger({
               <th scope="col">Bill</th>
               <th scope="col">Paid</th>
               <th scope="col">Balance</th>
+              {showsProof && <th scope="col">Proof</th>}
               {canShare && (
                 <th scope="col">
                   <span className="visually-hidden">Give to customer</span>
@@ -151,6 +173,18 @@ export function CustomerLedger({
                 <td>{entry.billAmount > 0 ? formatPkr(entry.billAmount) : '—'}</td>
                 <td>{entry.paidAmount > 0 ? formatPkr(entry.paidAmount) : '—'}</td>
                 <td data-testid={`balance-${entry.id}`}>{formatPkr(entry.balanceAfter)}</td>
+
+                {showsProof && (
+                  <td>
+                    {proofKindFor(entry) && (
+                      <ProofAttachment
+                        kind={proofKindFor(entry)!}
+                        id={entry.referenceId!}
+                        hasProof={entry.hasProof ?? false}
+                      />
+                    )}
+                  </td>
+                )}
 
                 {canShare && (
                   <td>

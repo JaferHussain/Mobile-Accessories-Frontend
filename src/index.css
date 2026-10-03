@@ -232,7 +232,9 @@ h3 { font-size: 1rem; margin: 1.75rem 0 0.5rem; }
 
 /* Listed in the same order as NAV_ITEMS in AppShell.tsx. The rule keys on href, so the
    order here is for reading only — the rail's order comes from that array. */
+.shell__nav a[href='/my-day']::before    { content: '📱'; }
 .shell__nav a[href='/dashboard']::before { content: '🏠'; }
+.shell__nav a[href='/team']::before      { content: '👤'; }
 .shell__nav a[href='/pos']::before       { content: '🛒'; }
 .shell__nav a[href='/products']::before  { content: '📦'; }
 .shell__nav a[href='/categories']::before { content: '🗂️'; }
@@ -241,12 +243,20 @@ h3 { font-size: 1rem; margin: 1.75rem 0 0.5rem; }
 /* A bill is a document — distinct from the receipt icon Expenses uses. */
 .shell__nav a[href='/invoices']::before  { content: '📄'; }
 .shell__nav a[href='/purchases']::before { content: '🚚'; }
-.shell__nav a[href='/returns']::before   { content: '↩️'; }
+.shell__nav a[href='/sale-returns']::before     { content: '↩️'; }
+/* Goods going back out to the supplier — the reverse of the Purchases truck. */
+.shell__nav a[href='/purchase-returns']::before { content: '↪️'; }
 .shell__nav a[href='/suppliers']::before { content: '🏭'; }
+/* The supplier's account book. */
+.shell__nav a[href='/supplier-ledger']::before { content: '📒'; }
 .shell__nav a[href='/expenses']::before  { content: '🧾'; }
 .shell__nav a[href='/reports']::before   { content: '📊'; }
 /* Counting the notes in the drawer. */
 .shell__nav a[href='/day-close']::before { content: '💵'; }
+/* A paperclip: the screenshot that still has to be attached. */
+.shell__nav a[href='/proofs-missing']::before { content: '📎'; }
+/* The shop's own bank and wallet accounts. */
+.shell__nav a[href='/shop-accounts']::before { content: '🏦'; }
 .shell__nav a[href='/admin']::before     { content: '⚙️'; }
 
 .shell__main {
@@ -1063,6 +1073,128 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
   color: var(--ink-muted);
   border-color: var(--border-firm);
 }
+
+/* The proof behind a non-cash transaction: open it, attach it, replace it. The same control on
+   every screen, so it is learnt once. The label stands in for the hidden file input. */
+.proof { display: inline-flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
+
+.proof .proof__view,
+.proof .proof__attach {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.3rem 0.65rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  border-radius: 999px;
+  border: 1px solid var(--border-firm);
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.proof .proof__view::before { content: '📎 '; }
+.proof .proof__view { border-color: var(--green); color: var(--green-deep); }
+.proof .proof__attach:hover { background: var(--surface-alt); }
+.proof input:disabled + .proof__attach,
+.proof .proof__attach[aria-disabled='true'] { opacity: 0.6; cursor: wait; }
+.proof__failed { color: var(--red, #b42318); font-size: 0.78rem; }
+
+/* An expense paid by transfer: account, reference and screenshot, grouped so cash never sees them. */
+.expense-form__transfer {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.75rem 1rem 0.25rem;
+  margin: 0.5rem 0 0.75rem;
+  background: var(--surface-alt);
+}
+
+.expense-form__transfer legend { font-size: 0.8rem; font-weight: 600; color: var(--ink-muted); padding: 0 0.35rem; }
+
+/* The owner's expense categories: one line each, with its actions beside it. */
+.category-list { list-style: none; margin: 0.75rem 0; padding: 0; display: grid; gap: 0.4rem; }
+.category-list li {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.category-list li > span { flex: 1; }
+
+/* Hidden (retired) rows stay visible to the owner, but read as out of use. */
+.is-retired { opacity: 0.6; }
+
+/* A proof shown over the page at a readable, medium size — never stretched past its own size. */
+.proof-viewer__panel { max-width: min(36rem, calc(100vw - 2rem)); text-align: center; }
+.proof-viewer__image {
+  display: block;
+  max-width: 100%;
+  max-height: 65vh;
+  margin: 0 auto 0.75rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+}
+
+.modal__proof { display: flex; align-items: center; gap: 0.6rem; margin: 0.75rem 0; font-size: 0.85rem; }
+
+/* The owner's Team screen: a card per person, and one person's activity as a timeline. */
+.team-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: 0.85rem; margin: 1rem 0 1.5rem; }
+
+.team-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 0.9rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.team-card header { display: flex; justify-content: space-between; align-items: baseline; gap: 0.5rem; }
+.team-card h3 { margin: 0; }
+.team-card__job { font-size: 0.75rem; color: var(--ink-muted); }
+.team-card dl { display: grid; grid-template-columns: 1fr auto; gap: 0.25rem 0.75rem; margin: 0; font-size: 0.85rem; }
+.team-card dd { margin: 0; text-align: right; font-weight: 600; }
+.team-card__links { display: inline-flex; gap: 0.75rem; }
+.team-card footer { display: flex; justify-content: space-between; align-items: center; font-size: 0.8rem; color: var(--ink-muted); }
+
+/* Where the stock is: the figure a person sells from, then a quieter note on the rest. */
+.stock-count__note { color: var(--ink-muted); font-size: 0.8em; font-weight: 400; }
+
+/* Issuing stock to a salesman: search results and the lines being issued, one per row. */
+.stock-lines { list-style: none; margin: 0.5rem 0; padding: 0; display: grid; gap: 0.35rem; }
+.stock-lines li { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; padding: 0.4rem 0; border-bottom: 1px solid var(--border); }
+.stock-lines li > span:first-child, .stock-lines label { flex: 1 1 10rem; }
+.stock-lines input[type='number'] { width: 5rem; }
+
+/* The salesman's own screen, read on a phone: the one figure that matters in each card, large. */
+.team-card dd.my-day__big { font-size: 1.15rem; }
+@media (max-width: 640px) {
+  .my-day .team-grid { grid-template-columns: 1fr; }
+  .my-day .team-card dl { font-size: 0.95rem; }
+}
+
+.timeline { list-style: none; margin: 1rem 0; padding: 0; display: grid; gap: 0.4rem; }
+.timeline__item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem 0.9rem;
+  padding: 0.55rem 0.8rem;
+  border: 1px solid var(--border);
+  border-left-width: 4px;
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.timeline__item time { min-width: 7.5rem; color: var(--ink-muted); font-size: 0.8rem; }
+.timeline__item small { color: var(--ink-muted); flex-basis: 100%; }
+.timeline__item--Sale { border-left-color: var(--green); }
+.timeline__item--Return { border-left-color: var(--red); }
+.timeline__item--Recovery { border-left-color: #2563eb; }
+.timeline__item--SignIn { border-left-color: var(--border-firm); }
 
 /* The account's own actions, together on the right of the customer's header. */
 .ledger__actions {

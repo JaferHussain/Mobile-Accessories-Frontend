@@ -1,4 +1,5 @@
 import { LowStockBadge } from '@/components/LowStockBadge';
+import { StockCount } from '@/components/StockCount';
 import { formatPkr } from '@/lib/money';
 import { ProductPicture } from './ProductPicture';
 import type { Product } from './productApi';
@@ -11,6 +12,8 @@ export interface ProductDetailProps {
   /** Present only for an Admin — matches the actions already offered from the table. */
   onEdit?: () => void;
   onRetire?: () => void;
+  /** The owner reads what the shop owns; everyone else what they can sell from. */
+  owned?: boolean;
 }
 
 /**
@@ -25,7 +28,7 @@ export interface ProductDetailProps {
  * response carries no `retailPrice`, so it falls back to `salePrice`, the one price a
  * salesman is ever shown.
  */
-export function ProductDetail({ product, onClose, onSell, onEdit, onRetire }: ProductDetailProps) {
+export function ProductDetail({ product, onClose, onSell, onEdit, onRetire, owned = false }: ProductDetailProps) {
   const retailPrice = product.retailPrice ?? product.salePrice;
 
   return (
@@ -68,7 +71,7 @@ export function ProductDetail({ product, onClose, onSell, onEdit, onRetire }: Pr
         <div>
           <dt>Stock</dt>
           <dd>
-            {product.quantityOnHand}
+            <StockCount product={product} owned={owned} />
             <LowStockBadge
               quantityOnHand={product.quantityOnHand}
               minStockThreshold={product.minStockThreshold}

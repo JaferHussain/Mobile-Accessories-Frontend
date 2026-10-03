@@ -1,5 +1,6 @@
 import { api, unwrap } from '@/api/client';
 import type { ApiEnvelope, PagedResult } from '@/types/api';
+import type { PaymentMethod } from '@/features/pos/posApi';
 
 export interface InvoiceItemForReturn {
   id: number;
@@ -41,6 +42,9 @@ export interface SaleReturnRow {
   /** What was actually given back. */
   lineTotal: number;
   refundDue: number;
+  /** How the refund was handed back. Null when nothing was refunded. */
+  refundMethod: PaymentMethod | null;
+  hasRefundProof: boolean;
   reason: string | null;
 }
 
@@ -129,9 +133,10 @@ export const returnApi = {
     invoiceId: number,
     items: Array<{ invoiceItemId: number; quantity: number }>,
     reason: string | null,
+    refundMethod: PaymentMethod | null = null,
   ): Promise<SaleReturnResult> {
     return unwrap(
-      api.post<ApiEnvelope<SaleReturnResult>>('/sale-returns', { invoiceId, items, reason }),
+      api.post<ApiEnvelope<SaleReturnResult>>('/sale-returns', { invoiceId, items, reason, refundMethod }),
     );
   },
 

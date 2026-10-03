@@ -5,6 +5,7 @@ import { formatPkr } from '@/lib/money';
 import { ApiError } from '@/types/api';
 import type { Product } from '@/features/products/productApi';
 import { ProductPicture } from '@/features/products/ProductPicture';
+import { StockCount } from '@/components/StockCount';
 import { CheckoutModal, type CheckoutDetails } from './CheckoutModal';
 import { ShareButtons } from '@/features/documents/ShareButtons';
 import type { DocumentType, ShareLink } from '@/features/documents/documentApi';
@@ -46,6 +47,8 @@ export interface PosScreenProps {
    * function of its props, which is what makes the cart maths testable in isolation.
    */
   canSellOnCredit: boolean;
+  /** A field salesman: udhaar only to the owner's udhaar customers. */
+  udhaarCustomersOnly?: boolean;
 
   /**
    * Attaches the screenshot behind a non-cash payment to the sale just saved (feature 008).
@@ -100,6 +103,7 @@ export function PosScreen({
   onCreateCustomer,
   onSearchCustomers,
   canSellOnCredit,
+  udhaarCustomersOnly = false,
   initialTerm,
   onUploadPaymentProof,
   onBrowseProducts,
@@ -527,7 +531,10 @@ export function PosScreen({
                   wholesale price, resolved by the server, not worked out here. */}
               <span className="pos__result-price">{formatPkr(product.salePrice)}</span>
 
-              <span className="pos__result-stock">{product.quantityOnHand} in stock</span>
+              {/* The number this seller can sell from: the shelf at the counter, his own bag in the market. */}
+              <span className="pos__result-stock">
+                <StockCount product={product} />
+              </span>
 
               <button
                 type="button"
@@ -681,6 +688,7 @@ export function PosScreen({
         <CheckoutModal
           total={totals.total}
           canSellOnCredit={canSellOnCredit}
+          udhaarCustomersOnly={udhaarCustomersOnly}
           onSearchCustomers={onSearchCustomers}
           onCreateCustomer={onCreateCustomer}
           onConfirm={handleConfirm}

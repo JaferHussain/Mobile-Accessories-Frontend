@@ -4,19 +4,25 @@ import { SaleReturnForm } from './SaleReturnForm';
 import { PurchaseReturnForm } from './PurchaseReturnForm';
 import { returnApi, type ReturnableLine } from './returnApi';
 import { purchaseApi, supplierApi, type Purchase } from '@/features/suppliers/supplierApi';
-import { useAuth } from '@/features/auth/AuthContext';
 import { formatPkr } from '@/lib/money';
 import { QueryState } from '@/components/QueryState';
+import { PAYMENT_METHODS } from '@/features/pos/posApi';
+import { ProofAttachment } from '@/features/proofs/ProofAttachment';
+import { needsProof } from '@/features/proofs/proofApi';
+
+function methodLabel(method: string): string {
+  return PAYMENT_METHODS.find((option) => option.value === method)?.label ?? method;
+}
 
 /**
  * Where a return happens — the front door to two endpoints that already existed
  * (`/sale-returns`, `/purchase-returns`) but had no screen sending anything to them.
  *
- * Two tabs, not one form: a customer return and a supplier return look up different things (an
- * invoice vs. a purchase), are shaped differently (several lines vs. one product) and carry
- * different authority. Supplier returns expose cost and payables, so that route is Admin-only on
- * the server (`PurchaseReturnsController`) — the tab is hidden from Staff to match, not to
- * enforce it; the server enforces it regardless.
+ * Two screens under two headings — Sale return under Sell, Purchase return under Purchasing — at
+ * the owner's request; they used to be two tabs of one Returns screen. They look up different
+ * things (an invoice vs. a purchase), are shaped differently (several lines vs. one product) and
+ * carry different authority: supplier returns expose cost and payables, so that route is
+ * Admin-only on the server (`PurchaseReturnsController`) and guarded in the router to match.
  */
 
 function CustomerReturns() {
@@ -94,8 +100,8 @@ function CustomerReturns() {
               discountPerUnit: invoice.discountPerUnit,
             },
           ]}
-          onSubmit={async (items, reason) => {
-            const result = await returnApi.recordSaleReturn(invoice.invoiceId, items, reason);
+          onSubmit={async (items, reason, refundMethod) => {
+            const result = await returnApi.recordSaleReturn(invoice.invoiceId, items, reason, refundMethod);
 
             // Names the exact product and its updated stock — "it worked" is not enough; the
             // shopkeeper needs to see what changed.
@@ -204,6 +210,7 @@ function CustomerReturns() {
               <th scope="col">Returned</th>
               <th scope="col">Refund</th>
               <th scope="col">Reason</th>
+              <th scope="col">Proof</th>
             </tr>
           </thead>
           <tbody>
@@ -218,8 +225,26 @@ function CustomerReturns() {
                   {row.discountTotal > 0 ? `− ${formatPkr(row.discountTotal)}` : '—'}
                 </td>
                 <td className="numeric">{formatPkr(row.lineTotal)}</td>
-                <td className="numeric">{row.refundDue > 0 ? formatPkr(row.refundDue) : '—'}</td>
+                <td className="numeric">
+                  {row.refundDue > 0 ? formatPkr(row.refundDue) : '—'}
+                  {row.refundMethod && (
+                    <small className="field__hint"> {methodLabel(row.refundMethod)}</small>
+                  )}
+                </td>
                 <td>{row.reason ?? '—'}</td>
+                <td>
+                  {/* A transfer refund carries its screenshot; cash and no-refund rows need none. */}
+                  {needsProof(row.refundMethod) ? (
+                    <ProofAttachment
+                      kind="refund"
+                      id={row.returnId}
+                      hasProof={row.hasRefundProof}
+                      onAttached={() => void queryClient.invalidateQueries({ queryKey: ['sale-returns'] })}
+                    />
+                  ) : (
+                    '—'
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>
@@ -423,43 +448,35 @@ function SupplierReturns() {
   );
 }
 
-export function ReturnsPage() {
-  const { isAdmin } = useAuth();
-  const [tab, setTab] = useState<'customer' | 'supplier'>('customer');
-
+/**
+ * Taking goods back from a customer. Under **Sell**, beside the counter — the owner's layout:
+ * a return is the other half of a sale. Open to Staff, who take returns at the counter.
+ */
+export function SaleReturnsPage() {
   return (
     <section>
       <header className="page-header">
-        <h2>Returns</h2>
+        <h2>Sale return</h2>
       </header>
 
-      <div className="view-toggle" role="tablist" aria-label="Return type">
-        <button
-          type="button"
-          role="tab"
-          aria-selected={tab === 'customer'}
-          aria-pressed={tab === 'customer'}
-          onClick={() => setTab('customer')}
-        >
-          Customer return
-        </button>
+      <CustomerReturns />
+    </section>
+  );
+}
 
-        {/* Hidden from Staff to match the server, which is Admin-only on this route because it
-            exposes purchase cost and the supplier's payable balance. */}
-        {isAdmin && (
-          <button
-            type="button"
-            role="tab"
-            aria-selected={tab === 'supplier'}
-            aria-pressed={tab === 'supplier'}
-            onClick={() => setTab('supplier')}
-          >
-            Supplier return
-          </button>
-        )}
-      </div>
+/**
+ * Sending goods back to a supplier. Under **Purchasing**, beside the purchases it goes back
+ * against. Admin-only: the route is guarded, and the server refuses Staff regardless, because
+ * this screen shows purchase cost and the supplier's payable balance.
+ */
+export function PurchaseReturnsPage() {
+  return (
+    <section>
+      <header className="page-header">
+        <h2>Purchase return</h2>
+      </header>
 
-      {tab === 'customer' || !isAdmin ? <CustomerReturns /> : <SupplierReturns />}
+      <SupplierReturns />
     </section>
   );
 }

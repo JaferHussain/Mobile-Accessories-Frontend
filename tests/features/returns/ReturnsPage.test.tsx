@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { ReturnsPage } from '@/features/returns/ReturnsPage';
+import { PurchaseReturnsPage, SaleReturnsPage } from '@/features/returns/ReturnsPage';
 import { returnApi } from '@/features/returns/returnApi';
 import { purchaseApi, supplierApi } from '@/features/suppliers/supplierApi';
 import { AuthProvider } from '@/features/auth/AuthContext';
@@ -12,10 +12,11 @@ import type { AuthUser } from '@/types/api';
  * The Returns module — the front door to two backend endpoints (sale-returns,
  * purchase-returns) that already existed but had nothing wired to them.
  *
- * Customer returns and supplier returns are kept as two tabs rather than one form: they look up
+ * Two screens, under two headings: Sale return sits under Sell beside the counter, Purchase return
+ * under Purchasing beside the goods it goes back against — the owner's layout. They look up
  * different things (an invoice vs. a purchase), have different shapes (several lines vs. one
- * product) and different authority (Staff may take a customer return; only the owner may return
- * to a supplier, because that route exposes cost and payables).
+ * product) and different authority (Staff may take a sale return; only the owner may return to a
+ * supplier, because that route exposes cost and payables — the route is Admin-only).
  */
 
 vi.mock('@/features/returns/returnApi', () => ({
@@ -45,13 +46,13 @@ const page = <T,>(items: T[]) => ({
   totalPages: 1,
 });
 
-function renderPage(user: AuthUser = admin) {
+function renderPage(user: AuthUser = admin, which: 'sale' | 'purchase' = 'sale') {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 
   render(
     <AuthProvider initialUser={user}>
       <QueryClientProvider client={client}>
-        <ReturnsPage />
+        {which === 'sale' ? <SaleReturnsPage /> : <PurchaseReturnsPage />}
       </QueryClientProvider>
     </AuthProvider>,
   );
@@ -153,10 +154,12 @@ describe('customer returns', () => {
     expect(returnApi.findReturnableLines).not.toHaveBeenCalled();
   });
 
-  it('is available to a salesman', async () => {
+  it('is available to a salesman, and called a sale return', async () => {
     renderPage(staff);
 
-    expect(screen.getByRole('tab', { name: /customer/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Sale return' })).toBeInTheDocument();
+    // One screen, one job: no switch through to the supplier side.
+    expect(screen.queryByRole('tab')).not.toBeInTheDocument();
   });
 
   it('shows the general list of returns already recorded, with stock and money detail', async () => {
@@ -174,6 +177,8 @@ describe('customer returns', () => {
           discountTotal: 0,
           lineTotal: 1000,
           refundDue: 1000,
+          refundMethod: 'Cash',
+          hasRefundProof: false,
           reason: 'Wrong colour',
         },
       ]),
@@ -227,7 +232,13 @@ describe('customer returns', () => {
     expect(await screen.findByText('Return against INV-0077')).toBeInTheDocument();
 
     await userEvent.type(screen.getByLabelText(/return quantity for oppo charger/i), '1');
+    // A paid sale, so the money goes back — and how it went back is asked, never assumed.
+    await userEvent.selectOptions(screen.getByLabelText(/refunded by/i), 'Cash');
     await userEvent.click(screen.getByRole('button', { name: /record return/i }));
+
+    expect(returnApi.recordSaleReturn).toHaveBeenCalledWith(
+      77, [{ invoiceItemId: 5, quantity: 1 }], null, 'Cash',
+    );
 
     // The popup names the exact product and confirms the stock it left behind.
     expect(await screen.findByText(/oppo charger/i)).toBeInTheDocument();
@@ -236,10 +247,11 @@ describe('customer returns', () => {
 });
 
 describe('supplier returns', () => {
-  it('offers only the owner this tab', async () => {
-    renderPage(staff);
+  it('is its own screen, called a purchase return', async () => {
+    renderPage(admin, 'purchase');
 
-    expect(screen.queryByRole('tab', { name: /supplier/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Purchase return' })).toBeInTheDocument();
+    expect(screen.queryByRole('tab')).not.toBeInTheDocument();
   });
 
   it('picks a purchase from the recent list and shows the return form', async () => {
@@ -259,22 +271,19 @@ describe('supplier returns', () => {
       ]) as never,
     );
 
-    renderPage(admin);
-
-    await userEvent.click(screen.getByRole('tab', { name: /supplier/i }));
+    renderPage(admin, 'purchase');
     await userEvent.click(await screen.findByRole('button', { name: /return wireless earbuds/i }));
 
     expect(await screen.findByLabelText(/quantity/i)).toBeInTheDocument();
   });
 
   it('scopes both the purchase list and the return history to the chosen supplier', async () => {
-    renderPage(admin);
+    renderPage(admin, 'purchase');
 
-    await userEvent.click(screen.getByRole('tab', { name: /supplier/i }));
-    await userEvent.selectOptions(
-      await screen.findByLabelText(/supplier/i),
-      '3',
-    );
+    // The screen opens straight onto the form now, so wait for the suppliers to arrive — there
+    // is no tab click any more to give them the time.
+    await screen.findByRole('option', { name: 'Al-Rehman Traders' });
+    await userEvent.selectOptions(screen.getByLabelText(/supplier/i), '3');
 
     await waitFor(() => expect(purchaseApi.search).toHaveBeenLastCalledWith(3, undefined));
     await waitFor(() => expect(returnApi.listPurchaseReturns).toHaveBeenLastCalledWith(3));
@@ -297,16 +306,14 @@ describe('supplier returns', () => {
       ]),
     );
 
-    renderPage(admin);
-    await userEvent.click(screen.getByRole('tab', { name: /supplier/i }));
+    renderPage(admin, 'purchase');
 
     expect(await screen.findByText('Wireless Charger')).toBeInTheDocument();
     expect(screen.getByText(/1,600/)).toBeInTheDocument();
   });
 
   it('offers a Return item button next to the supplier dropdown', async () => {
-    renderPage(admin);
-    await userEvent.click(screen.getByRole('tab', { name: /supplier/i }));
+    renderPage(admin, 'purchase');
 
     expect(await screen.findByLabelText(/supplier/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /return item/i })).toBeInTheDocument();
@@ -337,8 +344,7 @@ describe('supplier returns', () => {
       newSupplierPayable: 7200,
     });
 
-    renderPage(admin);
-    await userEvent.click(screen.getByRole('tab', { name: /supplier/i }));
+    renderPage(admin, 'purchase');
 
     await userEvent.click(await screen.findByRole('button', { name: /return item/i }));
     await userEvent.type(screen.getByLabelText(/product name/i), 'oppo');

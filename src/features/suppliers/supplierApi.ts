@@ -31,6 +31,47 @@ export interface SupplierUpsert {
   notes?: string | null;
 }
 
+export type SupplierLedgerEntryType = 'Purchase' | 'Return' | 'Payment';
+
+/** One line of a supplier's account. Every amount, and the balance, is the server's. */
+export interface SupplierLedgerEntry {
+  entryType: SupplierLedgerEntryType;
+  referenceId: number;
+  entryDateUtc: string;
+  /** The goods bought or sent back. Null for a payment. */
+  productName: string | null;
+  quantity: number | null;
+  /** A return's own number. */
+  referenceNumber: string | null;
+  /** How a payment was made. */
+  paymentMethod: PaymentMethod | null;
+  /** A payment's reference (cheque / transaction number) or a return's reason. */
+  note: string | null;
+  billAmount: number;
+  returnedAmount: number;
+  paidAmount: number;
+  /** Whether a payment's proof is attached. Always false for goods. */
+  hasProof: boolean;
+  /** The shop account a payment left, when one was named. */
+  shopAccountName?: string | null;
+  balanceAfter: number;
+}
+
+export interface SupplierLedger {
+  supplierId: number;
+  supplierName: string;
+  payableBalance: number;
+  /** All-time, so the three always explain `payableBalance`. */
+  totalPurchased: number;
+  totalReturned: number;
+  totalPaid: number;
+  from: string | null;
+  to: string | null;
+  /** What was owed before `from` — the balance the listed period opens on. */
+  openingBalance: number;
+  entries: SupplierLedgerEntry[];
+}
+
 export interface Purchase {
   id: number;
   supplierId: number;
@@ -68,17 +109,29 @@ export const supplierApi = {
     return unwrap(api.put<ApiEnvelope<Supplier>>(`/suppliers/${id}`, supplier));
   },
 
+  /**
+   * A supplier's account. `from` and `to` are `yyyy-mm-dd` shop days, both inclusive; left out,
+   * the account runs from the first dealing to today. Admin only.
+   */
+  ledger(id: number, from?: string, to?: string): Promise<SupplierLedger> {
+    return unwrap(
+      api.get<ApiEnvelope<SupplierLedger>>(`/suppliers/${id}/ledger`, { params: { from, to } }),
+    );
+  },
+
   recordPayment(
     id: number,
     amount: number,
     paymentMethod: PaymentMethod,
     note?: string | null,
     confirmOverpayment = false,
-  ): Promise<{ supplierId: number; payableBalance: number }> {
+    /** Which shop account paid. Only for a transfer, and optional. */
+    shopAccountId: number | null = null,
+  ): Promise<{ supplierId: number; paymentId: number; payableBalance: number }> {
     return unwrap(
-      api.post<ApiEnvelope<{ supplierId: number; payableBalance: number }>>(
+      api.post<ApiEnvelope<{ supplierId: number; paymentId: number; payableBalance: number }>>(
         `/suppliers/${id}/payments`,
-        { amount, paymentMethod, note, confirmOverpayment },
+        { amount, paymentMethod, note, confirmOverpayment, shopAccountId },
       ),
     );
   },

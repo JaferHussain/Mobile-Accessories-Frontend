@@ -125,6 +125,11 @@ export function DayClosePage() {
               <Line label="Opening float" value={closing.openingFloat} testId="opening-float" />
               <Line label="Cash sales" value={closing.cashSales} testId="cash-sales" />
               <Line label="Cash received against udhaar" value={closing.cashRecovery} testId="cash-recovery" />
+              <Line
+                label="Cash received from salesmen"
+                value={closing.cashFromSalesmen ?? 0}
+                testId="cash-from-salesmen"
+              />
               <Line label="Cash refunded on returns" value={-closing.cashRefunds} testId="cash-refunds" />
               <Line label="Cash paid out (expenses)" value={-closing.cashPaidOut} testId="cash-paid-out" />
               <Line

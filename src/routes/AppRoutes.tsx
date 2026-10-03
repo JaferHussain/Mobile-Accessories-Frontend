@@ -7,8 +7,17 @@ import { BrandsPage, CategoriesPage } from '@/features/taxonomy/TaxonomyPage';
 import { CustomersPage } from '@/features/customers/CustomersPage';
 import { InvoicesPage } from '@/features/invoices/InvoicesPage';
 import { PurchasesPage } from '@/features/purchases/PurchasesPage';
-import { ReturnsPage } from '@/features/returns/ReturnsPage';
+import { PurchaseReturnsPage, SaleReturnsPage } from '@/features/returns/ReturnsPage';
 import { SuppliersPage } from '@/features/suppliers/SuppliersPage';
+import { SupplierLedgerPage } from '@/features/suppliers/SupplierLedgerPage';
+import { ProofMissingPage } from '@/features/proofs/ProofMissingPage';
+import { ShopAccountsPage } from '@/features/shopAccounts/ShopAccountsPage';
+import { TeamPage } from '@/features/team/TeamPage';
+import { TeamMemberPage } from '@/features/team/TeamMemberPage';
+import { CommissionPage } from '@/features/commission/CommissionPage';
+import { SalesmanCashPage } from '@/features/salesmanCash/SalesmanCashPage';
+import { MyDayPage } from '@/features/myDay/MyDayPage';
+import { SalesmanStockPage } from '@/features/salesmanStock/SalesmanStockPage';
 import { ExpensesPage } from '@/features/expenses/ExpensesPage';
 import { ReportsPage } from '@/features/reports/ReportsPage';
 import { DayClosePage } from '@/features/dayclose/DayClosePage';
@@ -66,7 +75,30 @@ export function AppRoutes() {
         <Route path="/categories" element={<AdminOnly><CategoriesPage /></AdminOnly>} />
         <Route path="/brands" element={<AdminOnly><BrandsPage /></AdminOnly>} />
         <Route path="/purchases" element={<AdminOnly><PurchasesPage /></AdminOnly>} />
-        <Route path="/returns" element={<ReturnsPage />} />
+        <Route path="/sale-returns" element={<SaleReturnsPage />} />
+        {/* Admin-only: it spans supplier payments and expenses, which are the owner's alone. */}
+        <Route path="/proofs-missing" element={<AdminOnly><ProofMissingPage /></AdminOnly>} />
+        {/* The owner's view of the team; staff never see one another's figures. */}
+        <Route path="/team" element={<AdminOnly><TeamPage /></AdminOnly>} />
+        <Route path="/team/:userId" element={<AdminOnly><TeamMemberPage /></AdminOnly>} />
+        {/* A field salesman's commission: what he earned, what waits on udhaar, what he is owed. */}
+        <Route path="/commissions/:userId" element={<AdminOnly><CommissionPage /></AdminOnly>} />
+        {/* The cash a field salesman carries from the market, and "Received from salesman". */}
+        <Route path="/salesman-cash/:userId" element={<AdminOnly><SalesmanCashPage /></AdminOnly>} />
+        {/* The stock he carries out of the shop: issue it, take it back, every unit on the record. */}
+        <Route path="/salesman-stock/:userId" element={<AdminOnly><SalesmanStockPage /></AdminOnly>} />
+        {/* The owner's own bank and wallet accounts. */}
+        <Route path="/shop-accounts" element={<AdminOnly><ShopAccountsPage /></AdminOnly>} />
+        {/* Admin-only: it shows purchase cost and what the shop owes. */}
+        <Route path="/supplier-ledger" element={<AdminOnly><SupplierLedgerPage /></AdminOnly>} />
+        <Route
+          path="/purchase-returns"
+          element={<AdminOnly><PurchaseReturnsPage /></AdminOnly>}
+        />
+        {/* The old combined screen. Kept as a redirect so a bookmark still lands somewhere. */}
+        <Route path="/returns" element={<Navigate to="/sale-returns" replace />} />
+        {/* Anyone's own day — always the signed-in person's figures, never another's. */}
+        <Route path="/my-day" element={<MyDayPage />} />
         <Route path="/suppliers" element={<AdminOnly><SuppliersPage /></AdminOnly>} />
         <Route path="/expenses" element={<AdminOnly><ExpensesPage /></AdminOnly>} />
         <Route path="/reports" element={<AdminOnly><ReportsPage /></AdminOnly>} />

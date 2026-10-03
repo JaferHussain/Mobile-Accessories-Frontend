@@ -16,6 +16,8 @@ export interface Customer {
   isActive: boolean;
   /** A standing label the owner sets (feature 004) — never derived from their invoices. */
   saleType: 'Retail' | 'Wholesale';
+  /** The owner's udhaar mark: the field salesman may sell to this customer on credit. */
+  creditAllowed?: boolean;
 }
 
 export type LedgerEntryType =
@@ -36,6 +38,10 @@ export interface LedgerEntry {
   billAmount: number;
   paidAmount: number;
   balanceAfter: number;
+  /** How a sale or payment was paid. Absent for every other kind of entry. */
+  paymentMethod?: string | null;
+  /** Whether that sale or payment has its proof attached. */
+  hasProof?: boolean;
 }
 
 export interface CustomerSummary {
@@ -76,6 +82,21 @@ export interface OpeningBalanceResult {
 }
 
 export const customerApi = {
+  /**
+   * Sets the owner's udhaar mark. The update endpoint replaces the contact details too, so they
+   * are sent back exactly as they stand. The server ignores the mark from anyone but the owner.
+   */
+  setCreditAllowed(customer: Customer, creditAllowed: boolean): Promise<Customer> {
+    return unwrap(
+      api.put<ApiEnvelope<Customer>>(`/customers/${customer.id}`, {
+        name: customer.name,
+        mobileNumber: customer.mobileNumber ?? null,
+        address: customer.address ?? null,
+        creditAllowed,
+      }),
+    );
+  },
+
   /**
    * Records — or corrects — what a customer already owed before the software was in use.
    *
