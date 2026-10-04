@@ -18,6 +18,8 @@ import { CommissionPage } from '@/features/commission/CommissionPage';
 import { SalesmanCashPage } from '@/features/salesmanCash/SalesmanCashPage';
 import { MyDayPage } from '@/features/myDay/MyDayPage';
 import { SalesmanStockPage } from '@/features/salesmanStock/SalesmanStockPage';
+import { UdhaarCustomersPage } from '@/features/udhaar/UdhaarCustomersPage';
+import { RecoveryPage } from '@/features/recovery/RecoveryPage';
 import { ExpensesPage } from '@/features/expenses/ExpensesPage';
 import { ReportsPage } from '@/features/reports/ReportsPage';
 import { DayClosePage } from '@/features/dayclose/DayClosePage';
@@ -87,6 +89,10 @@ export function AppRoutes() {
         <Route path="/salesman-cash/:userId" element={<AdminOnly><SalesmanCashPage /></AdminOnly>} />
         {/* The stock he carries out of the shop: issue it, take it back, every unit on the record. */}
         <Route path="/salesman-stock/:userId" element={<AdminOnly><SalesmanStockPage /></AdminOnly>} />
+        {/* Who the shop gives credit to — registered with phone and ID card. Owner only. */}
+        <Route path="/udhaar-customers" element={<AdminOnly><UdhaarCustomersPage /></AdminOnly>} />
+        {/* Everyone who owes, most overdue first. Open to all: collecting is everyone's job. */}
+        <Route path="/recovery" element={<RecoveryPage />} />
         {/* The owner's own bank and wallet accounts. */}
         <Route path="/shop-accounts" element={<AdminOnly><ShopAccountsPage /></AdminOnly>} />
         {/* Admin-only: it shows purchase cost and what the shop owes. */}

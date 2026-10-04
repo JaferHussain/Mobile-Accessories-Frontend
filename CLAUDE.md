@@ -46,9 +46,16 @@ cd ../backend && dotnet test            # and so must the backend
   button says **Search**, not Add.
 - **A one-letter search is refused by the server (400).** `PosPage` treats `VALIDATION_FAILED`
   from search as "no product found"; `ProductsPage` shows a hint and does not send it.
-- **Checkout** (`CheckoutModal`): Walk-in / Existing / New customer. Udhaar and part payment
-  require a customer. `amountPaid` is derived, never typed twice. Account number and transaction
-  ID appear only for a transfer method. Keep **Raast** in `PAYMENT_METHODS`. `handleConfirm`
+- **Checkout** (`CheckoutModal`): **Walk-in / Udhaar customer — the only two kinds.** There is no
+  "New customer": nobody gets credit at the counter without being registered first. Full udhaar
+  (`Credit (udhaar)`) appears only once an udhaar customer is chosen (the search asks for
+  `udhaarOnly`). A walk-in may pay part — the owner only — and the form then asks for **Customer
+  name** and **Phone number**, recorded through `onCreateCustomer`; a walk-in who pays in full is
+  never stored. **The counter shopkeeper takes part payments too** (`canTakePartPayment`, which
+  PosPage passes for staff who are not field salesmen) — from a walk-in with name and phone, or an
+  udhaar customer — but is never offered `Credit (udhaar)`, and the hint says only the owner can
+  put the whole bill on udhaar. `amountPaid` is derived, never typed twice. Account number and transaction ID
+  appear only for a transfer method. Keep **Raast** in `PAYMENT_METHODS`. `handleConfirm`
   re-throws so a refused sale keeps the modal open with the cart intact.
 - **Saving clears the cart but keeps the receipt**, until **New sale** is pressed.
 
@@ -68,10 +75,20 @@ cd ../backend && dotnet test            # and so must the backend
 ## Transaction proofs
 
 - **One control everywhere:** `ProofAttachment` (Attach proof / View proof / Replace), on the
-  customer ledger, supplier ledger, Invoices dialog, sale return history, expenses list and the
-  **Proof missing** page (Money, Admin only). Shown only when `needsProof(method)` — the four
+  customer ledger, supplier ledger, Invoices dialog, sale return history, expenses list, a
+  salesman's cash movements and the **Proof missing** page (Money, Admin only). Shown only when `needsProof(method)` — the four
   transfer methods; never Cash, Credit or Partial.
 - **A Proof column appears only when some row needs it**, so a cash-only register looks as it did.
+- **The screenshot is asked for at the moment money moves**, on every payment form —
+  `ProofFileField`: Receive payment (ledger and Recovery), Pay supplier, Sale return (a transfer
+  refund), Received from salesman, Pay commission, the expense form, and the counter receipt right
+  after a sale. Shown only for a transfer method, always optional. The page **saves first, then
+  `attachProofAfterSave`** with the id the save returned; `proofOutcomeText` adds "Screenshot
+  attached" or "did not attach — add it from Proof missing" to the confirmation. A failed upload is
+  never reported as a failed payment.
+- **Test the attach through the real `proofApi` object** (`vi.spyOn(proofApi, 'attach')`). Mocking
+  the module's export replaces only the import; the shared helper inside the module still calls the
+  original, so the mock never sees the upload.
 - **Refunded by** (sale return) and **Paid by** (bank expense) start unanswered, like Paid from:
   a default would put transfer money into the day-close drawer count.
 - **View opens a blob, never a URL to the file** — proofs are only reachable through the signed-in
@@ -109,15 +126,15 @@ cd ../backend && dotnet test            # and so must the backend
 ## The salesman in the market
 
 - **Checkout** takes `udhaarCustomersOnly` (PosPage passes it for `user.job === 'FieldSales'`):
-  Udhaar and Part payment are offered only once one of the owner's **udhaar customers** is chosen
-  under Existing customer, which the pick list marks. Choosing another customer closes it again and
-  drops a Credit/Partial choice back to Cash. The server refuses anything else regardless.
-- **Udhaar customer** tick-box (`UdhaarCustomerToggle`) on a customer's page, owner only; the list
-  says "udhaar customer" beside the type. The update endpoint replaces contact details too, so
-  `setCreditAllowed` sends them back as they stand.
+  udhaar and part payment are offered only once an udhaar customer is chosen; a walk-in pays in
+  full. Changing customer drops a Credit/Partial choice that no longer applies back to Cash. The
+  server refuses anything else regardless.
 - **Cash with him** (`/salesman-cash/:userId`, Admin): collected / refunded / handed over / with him
   now, every movement, and **Received from salesman** — amount starts at what he holds, "Received
   as" starts unanswered (cash joins the drawer, a transfer does not). Reached from his Team card.
+  A transfer offers an optional **Screenshot**: the page saves the handover, then attaches it to
+  the returned `handoverId`; a failed upload is said so, never reported as a failed handover. Each
+  transfer handover in the list carries `ProofAttachment` (kind `salesman-handover`).
 - **Day close** shows "Cash received from salesmen" as money into the drawer.
 - **Stock with him** (`/salesman-stock/:userId`, Admin, from the Team card's **Stock →**): what he
   carries, a "Brought back" quantity per line with **Take back into the shop**, **Issue stock** (find
@@ -140,6 +157,47 @@ the New sale cards, the Products table, grid and detail. Purchases, reports and 
 the owned total on purpose — a purchase re-costs every owned unit, and reports count what the shop
 owns.
 
+## Udhaar customers
+
+- **Udhaar customers** (`/udhaar-customers`, owner only, under Customers & bills): search, what each
+  owes, ID card **On file** / **ID card missing**, View ID card, Complete ID card, Remove.
+  **Register udhaar customer** asks for name, phone and both sides of the ID card (with previews),
+  all required.
+- **On a customer's ledger** (`UdhaarStatusPanel`, owner only): an ordinary customer gets **Make
+  udhaar customer**, which opens the same form with their name and phone filled in — the old
+  tick-box is gone, because a tick would get round the ID card. An udhaar customer gets a
+  highlighted badge, View ID card, Remove from udhaar, and Complete ID card when one is missing.
+- **ID card photos open in a popup fetched through the signed-in request** (`IdCardViewer`,
+  `udhaarApi.idCard` → `fetchBlob`), only when asked — never a link to the file.
+
+## Recovery
+
+- **Recovery** (`/recovery`, Customers & bills, everyone): totals first (owed, customers owing,
+  overdue), then All / Udhaar customers / Part paid / Overdue and a search, then a card per person —
+  amount, owing since, due date, months overdue, **Receive payment** (the ledger's
+  `ReceivePaymentModal`, then the receipt's share buttons), **Remind** (`ReminderButtons`), and the
+  open bills, each Part paid or Not paid. Every figure is the server's; filtering and searching
+  are the only things done here. Dates are read from their `yyyy-mm-dd` parts, never through `Date`.
+
+## Purchases — a supplier's bill
+
+- **Purchases is one bill, top to bottom** (`PurchaseBillForm`): 1 Supplier & bill (supplier, bill
+  date, supplier's bill no.), 2 Items (search, or create a product in place; each product opens
+  `BillLineForm` — cost, quantity, both prices, the first-stocking price and the latest-cost
+  warning — and **Add to bill**), 3 Payment (**Pay in full now / Pay part now / Pay later**, starting
+  unanswered; then Paid by, also unanswered, Date paid, From account, Reference), 4 Bill & proof
+  (the supplier's bill photo, always offered; the payment screenshot, only for a transfer). A
+  summary card beside it — items, bill total, paying now, left owing — holds **Save bill**.
+- **Date paid can never be before the bill date nor after today** (`min`/`max`, and moving the bill
+  later carries the payment date with it). The server refuses the same, and a cash payment dated
+  onto a closed day.
+- **The page saves the bill, then attaches the pictures** to the ids it returned (`purchase-bill` to
+  `billId`, `supplier-payment` to `paymentId`); a failed upload is said so, never a failed bill.
+- **Recent bills** (`PurchaseBillsList`): status badge, the bill photo (`ProofAttachment`), Details
+  (lines and payments, each payment's proof), and **Pay** while anything is owed — the modal
+  starts at what is owed, never dates before the bill, and takes a screenshot for a transfer.
+- Every figure — total, paid, owed, status — is the server's.
+
 ## Traps
 
 | Trap | What happens | Guard |
@@ -150,5 +208,6 @@ owns.
 | "Tidying" the rail groups | **Sell** = New sale + Sale return; **Purchasing** = Purchases, Suppliers, Supplier ledger, Purchase return (Admin-only). The owner split the old Returns screen so each return sits with the trade it reverses. For Staff, **Inventory** holds only Products — deliberate | `AppShell` tests pin the groups; `/returns` redirects to `/sale-returns` |
 | Rendering a full-size product image in a list | Invisible locally; stalls the Products grid over the shop's connection | `ProductPicture` loads the thumbnail unless passed `size="full"` (only `ProductDetail`) |
 | Re-adding the "local brand" UI | Removed at the owner's request; a brand is just a name | Three tests pin its absence — ask before touching |
+| A timed UI element shorter than the test's polling interval | `findBy…` polls every 50 ms; a confirmation set to vanish after 50 ms could appear and disappear between two looks, failing the receipt test at random — more often on a busy machine, so it read as load | Give a timed element in a test several polls to live (`confirmationVisibleMs: 400` in `PosReceipt.test.tsx`) |
 | A date from `toISOString().slice(0, 10)` or the device's local date | The UTC date is still yesterday until 5 a.m. in the shop; mixing it with a local date made the Reports range run BACKWARDS on the 1st of every month (from the 1st to the 30th) and show nothing, and dated early-morning expenses a day early | `shopToday()` / `shopMonthStart()` in `lib/shopDay.ts` — Asia/Karachi, one clock. `shopDay.test.ts` pins the 1 a.m. case |
 | Putting a price or quantity on the product form | Two places to price an item; they disagree the first time the wrong one is used | Prices are set by a purchase only |

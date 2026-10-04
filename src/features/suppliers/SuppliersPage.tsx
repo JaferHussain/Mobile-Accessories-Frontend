@@ -7,6 +7,8 @@ import { accountLabel, accountsFor, shopAccountApi } from '@/features/shopAccoun
 import { QueryState } from '@/components/QueryState';
 import { formatPkr } from '@/lib/money';
 import { ApiError, ErrorCodes } from '@/types/api';
+import { ProofFileField } from '@/features/proofs/ProofFileField';
+import { attachProofAfterSave, needsProof, proofOutcomeText } from '@/features/proofs/proofApi';
 
 /**
  * The real ways money reaches a supplier. Credit and Partial describe an unpaid SALE; the server
@@ -23,6 +25,8 @@ export interface SupplierPayment {
   confirmOverpayment: boolean;
   /** Which shop account paid. Only for a transfer, and optional. */
   shopAccountId: number | null;
+  /** A transfer's screenshot, chosen as the payment is recorded. Null when none was. */
+  proofFile: File | null;
 }
 
 function PayModal({
@@ -40,6 +44,7 @@ function PayModal({
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | ''>('');
   const [note, setNote] = useState('');
   const [shopAccountId, setShopAccountId] = useState<number | ''>('');
+  const [proofFile, setProofFile] = useState<File | null>(null);
 
   // Loaded when the box opens, not with the supplier list: most visits to Suppliers pay no one.
   const accounts = useQuery({ queryKey: ['shop-accounts', 'active'], queryFn: () => shopAccountApi.list() });
@@ -72,6 +77,7 @@ function PayModal({
         note: note.trim() || null,
         confirmOverpayment,
         shopAccountId: isTransfer && shopAccountId !== '' ? shopAccountId : null,
+        proofFile: needsProof(paymentMethod) ? proofFile : null,
       });
     } catch (caught) {
       if (caught instanceof ApiError && caught.code === ErrorCodes.OverpaymentNotConfirmed) {
@@ -160,6 +166,8 @@ function PayModal({
           </div>
         )}
 
+        <ProofFileField id="supplierPayProof" method={paymentMethod} onFile={setProofFile} />
+
         <div className="field">
           <label htmlFor="supplierPayNote">Reference (optional)</label>
           <input
@@ -245,14 +253,17 @@ export function SuppliersPage() {
   });
 
   const navigate = useNavigate();
+  const [payNotice, setPayNotice] = useState<string | null>(null);
 
   const pay = useMutation({
     mutationFn: (input: SupplierPayment & { id: number }) =>
       supplierApi.recordPayment(
         input.id, input.amount, input.paymentMethod, input.note, input.confirmOverpayment, input.shopAccountId,
       ),
-    onSuccess: async () => {
+    onSuccess: async (result, input) => {
+      const proof = await attachProofAfterSave('supplier-payment', result.paymentId, input.proofFile, input.paymentMethod);
       await queryClient.invalidateQueries({ queryKey: ['suppliers'] });
+      setPayNotice(`Payment recorded.${proofOutcomeText(proof)}`);
       setPaying(null);
     },
   });
@@ -262,6 +273,12 @@ export function SuppliersPage() {
       <header className="page-header">
         <h2>Suppliers</h2>
       </header>
+
+      {payNotice && (
+        <p className="form-success" role="status">
+          {payNotice}
+        </p>
+      )}
 
       <form
         className="supplier-form"

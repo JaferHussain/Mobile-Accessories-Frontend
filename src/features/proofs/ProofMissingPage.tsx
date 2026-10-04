@@ -11,6 +11,8 @@ const KIND_LABELS: Record<MissingProof['kind'], string> = {
   SupplierPayment: 'Supplier payment',
   Refund: 'Refund',
   Expense: 'Expense',
+  SalesmanHandover: 'Received from salesman',
+  CommissionPayout: 'Commission paid',
 };
 
 function methodLabel(method: string | null): string {

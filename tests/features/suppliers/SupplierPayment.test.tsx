@@ -6,6 +6,7 @@ import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { SuppliersPage } from '@/features/suppliers/SuppliersPage';
 import { supplierApi, type Supplier } from '@/features/suppliers/supplierApi';
 import { shopAccountApi } from '@/features/shopAccounts/shopAccountApi';
+import { proofApi } from '@/features/proofs/proofApi';
 
 vi.mock('@/features/shopAccounts/shopAccountApi', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/features/shopAccounts/shopAccountApi')>();
@@ -165,5 +166,31 @@ describe('a supplier’s account', () => {
     await userEvent.click(within(row).getByRole('button', { name: 'Ledger' }));
 
     expect(await screen.findByTestId('location')).toHaveTextContent('/supplier-ledger?supplierId=7');
+  });
+});
+
+describe('paying a supplier — the screenshot, as the payment is recorded', () => {
+  it('records the payment, then attaches the screenshot to it', async () => {
+    // Spied on the real object, which the page and the shared save-then-attach helper both use.
+    vi.spyOn(proofApi, 'attach').mockResolvedValue(undefined);
+    const dialog = await openPay();
+
+    await userEvent.clear(within(dialog).getByLabelText(/amount/i));
+    await userEvent.type(within(dialog).getByLabelText(/amount/i), '5000');
+    await userEvent.selectOptions(within(dialog).getByLabelText(/paid by/i), 'JazzCash');
+    const shot = new File(['jpeg'], 'transfer.jpg', { type: 'image/jpeg' });
+    await userEvent.upload(within(dialog).getByLabelText(/screenshot/i), shot);
+    await userEvent.click(within(dialog).getByRole('button', { name: /record payment/i }));
+
+    await waitFor(() => expect(proofApi.attach).toHaveBeenCalledWith('supplier-payment', 40, shot));
+    expect(await screen.findByRole('status')).toHaveTextContent(/screenshot attached/i);
+  });
+
+  it('never asks for one when the supplier was paid in cash', async () => {
+    const dialog = await openPay();
+
+    await userEvent.selectOptions(within(dialog).getByLabelText(/paid by/i), 'Cash');
+
+    expect(within(dialog).queryByLabelText(/screenshot/i)).not.toBeInTheDocument();
   });
 });

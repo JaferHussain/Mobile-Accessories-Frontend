@@ -90,6 +90,8 @@ export function PosPage() {
       canSellOnCredit={isAdmin}
       // The salesman in the market may give udhaar — but only to the owner's udhaar customers.
       udhaarCustomersOnly={user?.job === 'FieldSales'}
+      // The shopkeeper at the counter may take part payments — the owner's decision.
+      canTakePartPayment={!isAdmin && user?.job !== 'FieldSales'}
       initialTerm={prefillTerm}
       onUploadPaymentProof={posApi.uploadPaymentProof}
       onBrowseProducts={() => navigate('/products')}

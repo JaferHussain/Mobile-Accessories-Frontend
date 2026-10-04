@@ -22,7 +22,7 @@ const fieldSalesman: AuthUser = { id: 3, username: 'ali', fullName: 'Ali', role:
 
 const ADMIN_ONLY_LINKS = [
   'Purchases', 'Suppliers', 'Supplier ledger', 'Purchase return', 'Categories', 'Brands', 'Expenses', 'Reports',
-  'Dashboard', 'Admin', 'Proof missing', 'Shop accounts', 'Team',
+  'Dashboard', 'Admin', 'Proof missing', 'Shop accounts', 'Team', 'Udhaar customers',
 ];
 // Invoices is shared, not Admin-only: handing a customer their own receipt is counter work, and
 // the list carries no cost or profit. The server agrees — the endpoint is open to any signed-in
@@ -35,7 +35,7 @@ const ADMIN_ONLY_LINKS = [
 //
 // Sale return sits under Sell beside the counter, at the owner's request: taking goods back is
 // the other half of selling them. Purchase return went to Purchasing, so a salesman never sees it.
-const SHARED_LINKS = ['New sale', 'Sale return', 'Invoices', 'Customers', 'Products'];
+const SHARED_LINKS = ['New sale', 'Sale return', 'Invoices', 'Customers', 'Recovery', 'Products'];
 
 /**
  * Opens every collapsed group.

@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { CommissionPage } from '@/features/commission/CommissionPage';
 import { commissionApi, type CommissionStatement } from '@/features/commission/commissionApi';
+import { proofApi } from '@/features/proofs/proofApi';
 
 vi.mock('@/features/commission/commissionApi', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/features/commission/commissionApi')>()),
@@ -142,5 +143,41 @@ describe('Commission', () => {
     const payout = (await screen.findByText('Moiz')).closest('tr')!;
     expect(within(payout).getByText(/60/)).toBeInTheDocument();
     expect(within(payout).getByText('Cash')).toBeInTheDocument();
+  });
+});
+
+describe('Commission — the screenshot, as he is paid', () => {
+  it('pays him, then attaches the screenshot to that payout', async () => {
+    vi.mocked(commissionApi.pay).mockResolvedValue({ ...statement, paidOut: 100, owed: 0, payoutId: 77 });
+    // Spied on the real object, which the page and the shared save-then-attach helper both use.
+    vi.spyOn(proofApi, 'attach').mockResolvedValue(undefined);
+    renderPage();
+    await screen.findByTestId('owed');
+
+    await userEvent.selectOptions(screen.getByLabelText(/paid by/i), 'BankTransfer');
+    const shot = new File(['jpeg'], 'transfer.jpg', { type: 'image/jpeg' });
+    await userEvent.upload(screen.getByLabelText(/screenshot/i), shot);
+    await userEvent.click(screen.getByRole('button', { name: /pay commission/i }));
+
+    await waitFor(() => expect(proofApi.attach).toHaveBeenCalledWith('commission-payout', 77, shot));
+    expect(await screen.findByRole('status')).toHaveTextContent(/screenshot attached/i);
+  });
+
+  it('offers to attach the proof of a transfer payout in the list — never of a cash one', async () => {
+    vi.mocked(commissionApi.statement).mockResolvedValue({
+      ...statement,
+      payouts: [
+        ...statement.payouts,
+        { id: 2, amount: 40, paymentMethod: 'JazzCash', note: null, paidAtUtc: '2026-10-01T12:00:00Z', recordedBy: 'Moiz', hasProof: false },
+      ],
+    });
+    renderPage();
+
+    const table = await screen.findByRole('table', { name: /commission paid/i });
+    const transfer = within(table).getAllByRole('row').find((row) => row.textContent?.includes('JazzCash'))!;
+    const cash = within(table).getAllByRole('row').find((row) => row.textContent?.includes('Cash') && !row.textContent?.includes('JazzCash'))!;
+
+    expect(within(transfer).getByText(/attach proof/i)).toBeInTheDocument();
+    expect(within(cash).queryByText(/attach proof/i)).not.toBeInTheDocument();
   });
 });

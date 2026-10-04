@@ -5,6 +5,8 @@ import { QueryState } from '@/components/QueryState';
 import { formatPkr } from '@/lib/money';
 import { ApiError } from '@/types/api';
 import { PAYMENT_METHODS, type PaymentMethod } from '@/features/pos/posApi';
+import { ProofAttachment } from '@/features/proofs/ProofAttachment';
+import { needsProof, proofApi } from '@/features/proofs/proofApi';
 import { salesmanCashApi, type SalesmanCashKind } from './salesmanCashApi';
 
 /** The real ways money can reach the shop from him. */
@@ -37,6 +39,9 @@ export function SalesmanCashPage() {
   // Starts unanswered: cash joins the drawer at day close, a transfer went into a shop account.
   const [method, setMethod] = useState<PaymentMethod | ''>('');
   const [note, setNote] = useState('');
+  // A transfer's screenshot, usually already on the owner's phone — attached as the handover is saved.
+  const [proofFile, setProofFile] = useState<File | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // The amount starts at what he holds, once that is known.
@@ -47,10 +52,27 @@ export function SalesmanCashPage() {
   }, [statement.data]);
 
   const receive = useMutation({
-    mutationFn: () => salesmanCashApi.receive(userId, amount, method as PaymentMethod, note.trim() || null),
-    onSuccess: async () => {
+    mutationFn: async () => {
+      const result = await salesmanCashApi.receive(userId, amount, method as PaymentMethod, note.trim() || null);
+
+      // The handover is saved whatever happens to the picture. A failed upload is said so — and
+      // the handover waits on Proof missing — never reported as a failed handover.
+      if (proofFile && needsProof(method) && result.handoverId) {
+        try {
+          await proofApi.attach('salesman-handover', result.handoverId, proofFile);
+          return 'Received — with its screenshot.';
+        } catch {
+          return 'Received — but the screenshot did not attach. Add it from the list below or from Proof missing.';
+        }
+      }
+
+      return needsProof(method) ? 'Received. Attach the screenshot from the list below when you have it.' : 'Received.';
+    },
+    onSuccess: async (message) => {
+      setNotice(message);
       setMethod('');
       setNote('');
+      setProofFile(null);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['salesman-cash', userId] }),
         queryClient.invalidateQueries({ queryKey: ['team'] }),
@@ -63,6 +85,7 @@ export function SalesmanCashPage() {
   function submit(event: FormEvent) {
     event.preventDefault();
     setError(null);
+    setNotice(null);
 
     if (!(amount > 0)) {
       setError('The amount received must be more than zero.');
@@ -78,6 +101,10 @@ export function SalesmanCashPage() {
   }
 
   const data = statement.data;
+  // A Proof column only when some handover came by transfer — a cash-only list looks as it did.
+  const hasTransfers = (data?.movements ?? []).some(
+    (movement) => movement.kind === 'Handover' && needsProof(movement.method),
+  );
 
   return (
     <section>
@@ -112,6 +139,12 @@ export function SalesmanCashPage() {
                 {formatPkr(data.inHand)}
               </dd>
             </dl>
+
+            {notice && (
+              <p className="form-success" role="status">
+                {notice}
+              </p>
+            )}
 
             <form className="card inline-form" onSubmit={submit} noValidate>
               <h3>Received from salesman</h3>
@@ -151,6 +184,20 @@ export function SalesmanCashPage() {
                 <small className="field__hint">Cash joins today's drawer at day close; a transfer does not.</small>
               </div>
 
+              {/* Only a transfer leaves a screenshot; cash was counted into the drawer. */}
+              {needsProof(method) && (
+                <div className="field">
+                  <label htmlFor="handoverProof">Screenshot</label>
+                  <input
+                    id="handoverProof"
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    onChange={(event) => setProofFile(event.target.files?.[0] ?? null)}
+                  />
+                  <small className="field__hint">Optional now — it can be attached later from the list below.</small>
+                </div>
+              )}
+
               <div className="field">
                 <label htmlFor="handoverNote">Note</label>
                 <input id="handoverNote" maxLength={255} value={note} onChange={(event) => setNote(event.target.value)} />
@@ -175,6 +222,7 @@ export function SalesmanCashPage() {
                     <th scope="col">Reference</th>
                     <th scope="col">Customer / received by</th>
                     <th scope="col">Amount</th>
+                    {hasTransfers && <th scope="col">Proof</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -204,6 +252,18 @@ export function SalesmanCashPage() {
                         {movement.effect < 0 ? '− ' : '+ '}
                         {formatPkr(Math.abs(movement.effect))}
                       </td>
+                      {hasTransfers && (
+                        <td>
+                          {movement.kind === 'Handover' && needsProof(movement.method) && (
+                            <ProofAttachment
+                              kind="salesman-handover"
+                              id={movement.referenceId}
+                              hasProof={movement.hasProof === true}
+                              onAttached={() => void queryClient.invalidateQueries({ queryKey: ['salesman-cash', userId] })}
+                            />
+                          )}
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>

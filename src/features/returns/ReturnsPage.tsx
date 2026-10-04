@@ -9,6 +9,7 @@ import { QueryState } from '@/components/QueryState';
 import { PAYMENT_METHODS } from '@/features/pos/posApi';
 import { ProofAttachment } from '@/features/proofs/ProofAttachment';
 import { needsProof } from '@/features/proofs/proofApi';
+import { attachProofAfterSave, proofOutcomeText } from '@/features/proofs/proofApi';
 
 function methodLabel(method: string): string {
   return PAYMENT_METHODS.find((option) => option.value === method)?.label ?? method;
@@ -100,8 +101,9 @@ function CustomerReturns() {
               discountPerUnit: invoice.discountPerUnit,
             },
           ]}
-          onSubmit={async (items, reason, refundMethod) => {
+          onSubmit={async (items, reason, refundMethod, proofFile) => {
             const result = await returnApi.recordSaleReturn(invoice.invoiceId, items, reason, refundMethod);
+            const proof = await attachProofAfterSave('refund', result.returnId, proofFile, refundMethod);
 
             // Names the exact product and its updated stock — "it worked" is not enough; the
             // shopkeeper needs to see what changed.
@@ -119,7 +121,8 @@ function CustomerReturns() {
             setConfirmation(
               `Recorded ${result.returnNumber}. ${stockLine} — returned ` +
                 `${formatPkr(result.totalReturned)}${adjustment}` +
-                (result.refundDue > 0 ? `, refund owed ${formatPkr(result.refundDue)}.` : '.'),
+                (result.refundDue > 0 ? `, refund owed ${formatPkr(result.refundDue)}.` : '.') +
+                proofOutcomeText(proof),
             );
             setInvoice(null);
             setResults(null);

@@ -2,6 +2,8 @@ import { useMemo, useState, type FormEvent } from 'react';
 import { formatPkr, roundMoney } from '@/lib/money';
 import { ApiError } from '@/types/api';
 import { PAYMENT_METHODS, type PaymentMethod } from '@/features/pos/posApi';
+import { ProofFileField } from '@/features/proofs/ProofFileField';
+import { needsProof } from '@/features/proofs/proofApi';
 
 export interface ReturnableLine {
   invoiceItemId: number;
@@ -35,6 +37,8 @@ export interface SaleReturnFormProps {
     items: Array<{ invoiceItemId: number; quantity: number }>,
     reason: string | null,
     refundMethod: PaymentMethod | null,
+    /** A transfer refund's screenshot, chosen as the return is recorded. Null when none was. */
+    proofFile: File | null,
   ) => Promise<void>;
 }
 
@@ -59,6 +63,7 @@ export function SaleReturnForm({
   const [reason, setReason] = useState('');
   // Starts unanswered: assuming Cash showed every JazzCash refund as the drawer running over.
   const [refundMethod, setRefundMethod] = useState<PaymentMethod | ''>('');
+  const [proofFile, setProofFile] = useState<File | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -125,7 +130,12 @@ export function SaleReturnForm({
     setIsSaving(true);
 
     try {
-      await onSubmit(items, reason.trim() || null, refunds ? (refundMethod as PaymentMethod) : null);
+      await onSubmit(
+        items,
+        reason.trim() || null,
+        refunds ? (refundMethod as PaymentMethod) : null,
+        refunds && needsProof(refundMethod) ? proofFile : null,
+      );
     } catch (error) {
       setFormError(
         error instanceof ApiError ? error.message : 'Could not record the return. Please try again.',
@@ -270,6 +280,8 @@ export function SaleReturnForm({
               carry its screenshot as proof.
             </small>
           </div>
+
+          <ProofFileField id="refundProof" method={refundMethod} onFile={setProofFile} />
         </>
       )}
 

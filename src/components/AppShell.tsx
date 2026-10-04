@@ -60,6 +60,10 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { to: '/invoices', label: 'Invoices' },
       { to: '/customers', label: 'Customers' },
+      // Everyone who owes, most overdue first — open to staff, who take payments too.
+      { to: '/recovery', label: 'Recovery' },
+      // The only people sold to on full udhaar — registered with phone and ID card by the owner.
+      { to: '/udhaar-customers', label: 'Udhaar customers', adminOnly: true },
     ],
   },
   {

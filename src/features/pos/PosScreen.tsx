@@ -49,6 +49,8 @@ export interface PosScreenProps {
   canSellOnCredit: boolean;
   /** A field salesman: udhaar only to the owner's udhaar customers. */
   udhaarCustomersOnly?: boolean;
+  /** The counter shopkeeper: part payments, never the whole bill on udhaar. */
+  canTakePartPayment?: boolean;
 
   /**
    * Attaches the screenshot behind a non-cash payment to the sale just saved (feature 008).
@@ -104,6 +106,7 @@ export function PosScreen({
   onSearchCustomers,
   canSellOnCredit,
   udhaarCustomersOnly = false,
+  canTakePartPayment = false,
   initialTerm,
   onUploadPaymentProof,
   onBrowseProducts,
@@ -689,6 +692,7 @@ export function PosScreen({
           total={totals.total}
           canSellOnCredit={canSellOnCredit}
           udhaarCustomersOnly={udhaarCustomersOnly}
+          canTakePartPayment={canTakePartPayment}
           onSearchCustomers={onSearchCustomers}
           onCreateCustomer={onCreateCustomer}
           onConfirm={handleConfirm}

@@ -2,6 +2,8 @@ import { useState, type FormEvent } from 'react';
 import { ApiError, ErrorCodes } from '@/types/api';
 import { formatPkr } from '@/lib/money';
 import { PAYMENT_METHODS, type PaymentMethod } from '@/features/pos/posApi';
+import { ProofFileField } from '@/features/proofs/ProofFileField';
+import { needsProof } from '@/features/proofs/proofApi';
 
 export interface ReceivePaymentModalProps {
   customerName: string;
@@ -11,6 +13,8 @@ export interface ReceivePaymentModalProps {
     method: PaymentMethod,
     note: string | null,
     confirmOverpayment: boolean,
+    /** A transfer's screenshot, chosen as the payment is taken. Null when none was. */
+    proofFile: File | null,
   ) => Promise<void>;
   onCancel: () => void;
 }
@@ -30,6 +34,7 @@ export function ReceivePaymentModal({
   const [amount, setAmount] = useState<number>(0);
   const [method, setMethod] = useState<PaymentMethod>('Cash');
   const [note, setNote] = useState('');
+  const [proofFile, setProofFile] = useState<File | null>(null);
   const [amountError, setAmountError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [needsOverpaymentConfirmation, setNeedsOverpaymentConfirmation] = useState(false);
@@ -49,7 +54,7 @@ export function ReceivePaymentModal({
     setIsSaving(true);
 
     try {
-      await onReceive(amount, method, note.trim() || null, confirmOverpayment);
+      await onReceive(amount, method, note.trim() || null, confirmOverpayment, needsProof(method) ? proofFile : null);
     } catch (error) {
       if (error instanceof ApiError && error.code === ErrorCodes.OverpaymentNotConfirmed) {
         setNeedsOverpaymentConfirmation(true);
@@ -120,6 +125,8 @@ export function ReceivePaymentModal({
             ))}
           </select>
         </div>
+
+        <ProofFileField id="paymentProofFile" method={method} onFile={setProofFile} />
 
         <div className="field">
           <label htmlFor="paymentNote">Note</label>

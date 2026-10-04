@@ -15,6 +15,8 @@ export interface SalesmanCashMovement {
   /** The customer; for a handover, who received it. */
   detail: string | null;
   effect: number;
+  /** A handover by transfer has its screenshot attached. */
+  hasProof?: boolean;
 }
 
 /** Collected − refunded − handed over = in hand. Every figure is the server's. */
@@ -27,6 +29,8 @@ export interface SalesmanCashStatement {
   handedOver: number;
   inHand: number;
   movements: SalesmanCashMovement[];
+  /** Only in answer to a handover just recorded — the id its screenshot is attached to. */
+  handoverId?: number | null;
 }
 
 export const salesmanCashApi = {

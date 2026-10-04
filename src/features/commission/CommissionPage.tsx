@@ -5,6 +5,9 @@ import { QueryState } from '@/components/QueryState';
 import { formatPkr } from '@/lib/money';
 import { ApiError } from '@/types/api';
 import { PAYMENT_METHODS, type PaymentMethod } from '@/features/pos/posApi';
+import { ProofAttachment } from '@/features/proofs/ProofAttachment';
+import { ProofFileField } from '@/features/proofs/ProofFileField';
+import { attachProofAfterSave, needsProof, proofOutcomeText } from '@/features/proofs/proofApi';
 import { commissionApi, type CommissionLine } from './commissionApi';
 
 /** The real ways to pay the salesman. */
@@ -48,6 +51,8 @@ export function CommissionPage() {
   const [amount, setAmount] = useState(0);
   const [method, setMethod] = useState<PaymentMethod | ''>('');
   const [note, setNote] = useState('');
+  const [proofFile, setProofFile] = useState<File | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // The amount starts at what he is owed, once that is known.
@@ -58,10 +63,15 @@ export function CommissionPage() {
   }, [statement.data]);
 
   const pay = useMutation({
-    mutationFn: () => commissionApi.pay(userId, amount, method as PaymentMethod, note.trim() || null),
-    onSuccess: async () => {
+    mutationFn: async () => {
+      const result = await commissionApi.pay(userId, amount, method as PaymentMethod, note.trim() || null);
+      return attachProofAfterSave('commission-payout', result.payoutId, proofFile, method);
+    },
+    onSuccess: async (proof) => {
+      setNotice(`Commission paid.${proofOutcomeText(proof)}`);
       setMethod('');
       setNote('');
+      setProofFile(null);
       await queryClient.invalidateQueries({ queryKey: ['commission', userId] });
     },
     onError: (caught) => setError(caught instanceof ApiError ? caught.message : 'Could not record the payment.'),
@@ -70,6 +80,7 @@ export function CommissionPage() {
   function submit(event: FormEvent) {
     event.preventDefault();
     setError(null);
+    setNotice(null);
 
     if (!(amount > 0)) {
       setError('The amount paid must be more than zero.');
@@ -117,6 +128,12 @@ export function CommissionPage() {
               </dd>
             </dl>
 
+            {notice && (
+              <p className="form-success" role="status">
+                {notice}
+              </p>
+            )}
+
             <form className="card inline-form" onSubmit={submit} noValidate>
               <h3>Pay commission</h3>
 
@@ -150,6 +167,8 @@ export function CommissionPage() {
                 </select>
                 <small className="field__hint">Cash comes out of the drawer at day close.</small>
               </div>
+
+              <ProofFileField id="payoutProof" method={method} onFile={setProofFile} />
 
               <div className="field">
                 <label htmlFor="payoutNote">Note</label>
@@ -216,6 +235,7 @@ export function CommissionPage() {
                     <th scope="col">Paid by</th>
                     <th scope="col">Recorded by</th>
                     <th scope="col">Note</th>
+                    {data.payouts.some((payout) => needsProof(payout.paymentMethod)) && <th scope="col">Proof</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -226,6 +246,18 @@ export function CommissionPage() {
                       <td>{PAYMENT_METHODS.find((option) => option.value === payout.paymentMethod)?.label ?? payout.paymentMethod}</td>
                       <td>{payout.recordedBy}</td>
                       <td>{payout.note ?? '—'}</td>
+                      {data.payouts.some((row) => needsProof(row.paymentMethod)) && (
+                        <td>
+                          {needsProof(payout.paymentMethod) && (
+                            <ProofAttachment
+                              kind="commission-payout"
+                              id={payout.id}
+                              hasProof={payout.hasProof === true}
+                              onAttached={() => void queryClient.invalidateQueries({ queryKey: ['commission', userId] })}
+                            />
+                          )}
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>

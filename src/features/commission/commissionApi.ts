@@ -32,6 +32,8 @@ export interface CommissionPayout {
   note: string | null;
   paidAtUtc: string;
   recordedBy: string;
+  /** A transfer payout has its screenshot attached. */
+  hasProof?: boolean;
 }
 
 /** A salesman's commission account. Earned − paid out = owed. */
@@ -46,6 +48,8 @@ export interface CommissionStatement {
   owed: number;
   lines: CommissionLine[];
   payouts: CommissionPayout[];
+  /** Only in answer to a payout just recorded — the id its screenshot is attached to. */
+  payoutId?: number | null;
 }
 
 export const commissionApi = {

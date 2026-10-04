@@ -2,7 +2,15 @@ import { api, fetchBlob, unwrap } from '@/api/client';
 import type { ApiEnvelope } from '@/types/api';
 
 /** The transactions that can carry a proof, as the server names them in the URL. */
-export type ProofKind = 'sale' | 'customer-payment' | 'supplier-payment' | 'refund' | 'expense';
+export type ProofKind =
+  | 'sale'
+  | 'customer-payment'
+  | 'supplier-payment'
+  | 'refund'
+  | 'expense'
+  | 'salesman-handover'
+  | 'commission-payout'
+  | 'purchase-bill';
 
 /** The ways money moves that leave a screenshot. Cash is its own proof. */
 const TRANSFER_METHODS: readonly string[] = ['BankTransfer', 'JazzCash', 'EasyPaisa', 'Raast'];
@@ -17,7 +25,7 @@ export function needsProof(method: string | null | undefined): boolean {
 
 /** One non-cash transaction still without a proof — a line on the owner's list. */
 export interface MissingProof {
-  kind: 'Sale' | 'CustomerPayment' | 'SupplierPayment' | 'Refund' | 'Expense';
+  kind: 'Sale' | 'CustomerPayment' | 'SupplierPayment' | 'Refund' | 'Expense' | 'SalesmanHandover' | 'CommissionPayout';
   referenceId: number;
   /** Invoice, receipt or return number; a supplier payment's note; an expense's category. */
   reference: string | null;
@@ -35,7 +43,44 @@ export const PROOF_KIND_SLUGS: Record<MissingProof['kind'], ProofKind> = {
   SupplierPayment: 'supplier-payment',
   Refund: 'refund',
   Expense: 'expense',
+  SalesmanHandover: 'salesman-handover',
+  CommissionPayout: 'commission-payout',
 };
+
+/** What became of a screenshot chosen while recording a payment. */
+export type ProofOutcome = 'attached' | 'failed' | 'none';
+
+/**
+ * Attaches a screenshot chosen on a form to the record that form just saved. The record is saved
+ * whatever happens here — a failed upload is reported as exactly that, never as a failed payment,
+ * and the transaction waits on Proof missing.
+ */
+export async function attachProofAfterSave(
+  kind: ProofKind,
+  id: number | null | undefined,
+  file: File | null | undefined,
+  method: string | null | undefined,
+): Promise<ProofOutcome> {
+  if (!file || !id || !needsProof(method)) {
+    return 'none';
+  }
+
+  try {
+    await proofApi.attach(kind, id, file);
+    return 'attached';
+  } catch {
+    return 'failed';
+  }
+}
+
+/** The sentence a confirmation adds about the screenshot. Empty when none was chosen. */
+export function proofOutcomeText(outcome: ProofOutcome): string {
+  if (outcome === 'attached') {
+    return ' Screenshot attached.';
+  }
+
+  return outcome === 'failed' ? ' The screenshot did not attach — add it from Proof missing.' : '';
+}
 
 export const proofApi = {
   /** Attaches (or replaces) the screenshot behind one transaction. */

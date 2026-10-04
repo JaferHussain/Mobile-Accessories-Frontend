@@ -244,7 +244,7 @@ describe('SaleReturnForm submission', () => {
 
     await waitFor(() =>
       // Nothing refunded — the return only reduces what is owed — so no refund method.
-      expect(onSubmit).toHaveBeenCalledWith([{ invoiceItemId: 11, quantity: 2 }], null, null),
+      expect(onSubmit).toHaveBeenCalledWith([{ invoiceItemId: 11, quantity: 2 }], null, null, null),
     );
   });
 
@@ -260,6 +260,7 @@ describe('SaleReturnForm submission', () => {
       expect(onSubmit).toHaveBeenCalledWith(
         [{ invoiceItemId: 11, quantity: 1 }],
         'Faulty charger',
+        null,
         null,
       ),
     );
@@ -289,7 +290,7 @@ describe('SaleReturnForm submission', () => {
     await user.click(screen.getByRole('button', { name: /record return/i }));
 
     await waitFor(() =>
-      expect(onSubmit).toHaveBeenCalledWith([{ invoiceItemId: 11, quantity: 1 }], null, 'JazzCash'),
+      expect(onSubmit).toHaveBeenCalledWith([{ invoiceItemId: 11, quantity: 1 }], null, 'JazzCash', null),
     );
   });
 
@@ -315,5 +316,34 @@ describe('SaleReturnForm submission', () => {
     await user.click(screen.getByRole('button', { name: /record return/i }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/cannot return 5/i);
+  });
+});
+
+describe('SaleReturnForm — the refund screenshot, as the return is recorded', () => {
+  it('takes one for a transfer refund and hands it on', async () => {
+    const user = userEvent.setup();
+    const onSubmit = renderForm(vi.fn().mockResolvedValue(undefined), 0);
+
+    setQty('Type-C Braided 2m', '1');
+    expect(screen.queryByLabelText(/screenshot/i)).not.toBeInTheDocument();
+
+    await user.selectOptions(screen.getByLabelText(/refunded by/i), 'EasyPaisa');
+    const shot = new File(['jpeg'], 'transfer.jpg', { type: 'image/jpeg' });
+    await user.upload(screen.getByLabelText(/screenshot/i), shot);
+    await user.click(screen.getByRole('button', { name: /record return/i }));
+
+    await waitFor(() =>
+      expect(onSubmit).toHaveBeenCalledWith([{ invoiceItemId: 11, quantity: 1 }], null, 'EasyPaisa', shot),
+    );
+  });
+
+  it('never asks for one on a cash refund', async () => {
+    const user = userEvent.setup();
+    renderForm(vi.fn().mockResolvedValue(undefined), 0);
+
+    setQty('Type-C Braided 2m', '1');
+    await user.selectOptions(screen.getByLabelText(/refunded by/i), 'Cash');
+
+    expect(screen.queryByLabelText(/screenshot/i)).not.toBeInTheDocument();
   });
 });

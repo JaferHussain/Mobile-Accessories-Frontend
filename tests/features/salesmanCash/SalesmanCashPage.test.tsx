@@ -5,10 +5,16 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { SalesmanCashPage } from '@/features/salesmanCash/SalesmanCashPage';
 import { salesmanCashApi, type SalesmanCashStatement } from '@/features/salesmanCash/salesmanCashApi';
+import { proofApi } from '@/features/proofs/proofApi';
 
 vi.mock('@/features/salesmanCash/salesmanCashApi', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/features/salesmanCash/salesmanCashApi')>()),
   salesmanCashApi: { statement: vi.fn(), mine: vi.fn(), receive: vi.fn() },
+}));
+
+vi.mock('@/features/proofs/proofApi', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/features/proofs/proofApi')>()),
+  proofApi: { attach: vi.fn(), view: vi.fn(), missing: vi.fn() },
 }));
 
 /**
@@ -107,4 +113,70 @@ describe('the salesman’s cash', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/cannot receive more/i);
   });
+
+  it('asks for a screenshot only when the money came by transfer', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await screen.findByLabelText(/amount/i);
+    expect(screen.queryByLabelText(/screenshot/i)).not.toBeInTheDocument();
+
+    await user.selectOptions(screen.getByLabelText(/received as/i), 'Cash');
+    expect(screen.queryByLabelText(/screenshot/i)).not.toBeInTheDocument();
+
+    await user.selectOptions(screen.getByLabelText(/received as/i), 'JazzCash');
+    expect(screen.getByLabelText(/screenshot/i)).toBeInTheDocument();
+  });
+
+  it('saves a transfer handover, then attaches its screenshot to it', async () => {
+    const user = userEvent.setup();
+    vi.mocked(salesmanCashApi.receive).mockResolvedValue({ ...statement, inHand: 0, handoverId: 41 });
+    vi.mocked(proofApi.attach).mockResolvedValue(undefined);
+    renderPage();
+
+    await screen.findByLabelText(/amount/i);
+    await user.selectOptions(screen.getByLabelText(/received as/i), 'JazzCash');
+    const shot = new File(['jpeg'], 'jazzcash.jpg', { type: 'image/jpeg' });
+    await user.upload(screen.getByLabelText(/screenshot/i), shot);
+    await user.click(screen.getByRole('button', { name: /received from salesman/i }));
+
+    await waitFor(() => expect(proofApi.attach).toHaveBeenCalledWith('salesman-handover', 41, shot));
+    expect(await screen.findByRole('status')).toHaveTextContent(/with its screenshot/i);
+  });
+
+  it('says so, without calling it a failed handover, when only the screenshot fails', async () => {
+    const user = userEvent.setup();
+    vi.mocked(salesmanCashApi.receive).mockResolvedValue({ ...statement, inHand: 0, handoverId: 41 });
+    vi.mocked(proofApi.attach).mockRejectedValue(new Error('upload failed'));
+    renderPage();
+
+    await screen.findByLabelText(/amount/i);
+    await user.selectOptions(screen.getByLabelText(/received as/i), 'EasyPaisa');
+    await user.upload(screen.getByLabelText(/screenshot/i), new File(['jpeg'], 'e.jpg', { type: 'image/jpeg' }));
+    await user.click(screen.getByRole('button', { name: /received from salesman/i }));
+
+    const status = await screen.findByRole('status');
+    expect(status).toHaveTextContent(/received/i);
+    expect(status).toHaveTextContent(/screenshot did not attach/i);
+  });
+
+  it('offers to attach the proof of a transfer handover in the list — never of a cash one', async () => {
+    vi.mocked(salesmanCashApi.statement).mockResolvedValue({
+      ...statement,
+      movements: [
+        ...statement.movements,
+        { kind: 'Handover', referenceId: 5, reference: null, entryDateUtc: '2026-09-30T10:00:00Z', amount: 500, method: 'JazzCash', detail: 'Moiz', effect: -500, hasProof: false },
+      ],
+    });
+    renderPage();
+
+    const table = await screen.findByRole('table', { name: /cash movements/i });
+    const rows = within(table).getAllByRole('row');
+    const transferRow = rows.find((row) => row.textContent?.includes('JazzCash'))!;
+    const cashRow = rows.find((row) => row.textContent?.includes('Handed over') && !row.textContent?.includes('JazzCash'))!;
+
+    expect(within(transferRow).getByText(/attach proof/i)).toBeInTheDocument();
+    expect(within(cashRow).queryByText(/attach proof/i)).not.toBeInTheDocument();
+  });
 });
+

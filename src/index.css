@@ -233,6 +233,8 @@ h3 { font-size: 1rem; margin: 1.75rem 0 0.5rem; }
 /* Listed in the same order as NAV_ITEMS in AppShell.tsx. The rule keys on href, so the
    order here is for reading only — the rail's order comes from that array. */
 .shell__nav a[href='/my-day']::before    { content: '📱'; }
+.shell__nav a[href='/udhaar-customers']::before { content: '🪪'; }
+.shell__nav a[href='/recovery']::before  { content: '💰'; }
 .shell__nav a[href='/dashboard']::before { content: '🏠'; }
 .shell__nav a[href='/team']::before      { content: '👤'; }
 .shell__nav a[href='/pos']::before       { content: '🛒'; }
@@ -2325,3 +2327,184 @@ textarea:hover:not(:disabled):not(:focus) {
 
 /* The field being typed into stays white against the tinted block. */
 .purchase-form__prices input { background: var(--surface); }
+
+/* ---------------------------------------------------------------------------------------------
+   Udhaar customers, and the two-kinds-of-customer checkout
+   --------------------------------------------------------------------------------------------- */
+
+/* The primary action on a form or page: one per screen, so the eye finds it first. */
+.button--primary {
+  background: var(--blue);
+  border-color: var(--blue);
+  color: #fff;
+  font-weight: 600;
+}
+.button--primary:hover:not(:disabled) { background: var(--blue-deep); border-color: var(--blue-deep); }
+
+/* A choice between two kinds of the same thing — Walk-in / Udhaar customer — as one control. */
+.segmented { display: inline-flex; border: 1px solid var(--border-firm); border-radius: var(--radius); overflow: hidden; margin: 0.25rem 0 0.6rem; }
+.segmented__option { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.5rem 0.9rem; cursor: pointer; font-weight: 500; }
+.segmented__option + .segmented__option { border-left: 1px solid var(--border-firm); }
+.segmented__option input { margin: 0; }
+.segmented__option.is-active { background: var(--blue-soft); color: var(--blue-deep); font-weight: 600; }
+
+.checkout__walkin-debt {
+  margin-top: 0.6rem;
+  padding: 0.6rem 0.8rem;
+  border-left: 4px solid var(--amber, #d97706);
+  background: color-mix(in srgb, var(--amber, #d97706) 8%, transparent);
+  border-radius: var(--radius);
+}
+.checkout__owing { color: var(--red); font-weight: 700; }
+
+/* Who the shop gives credit to. */
+.badge--udhaar { background: var(--blue-soft); color: var(--blue-deep); border: 1px solid var(--blue); font-weight: 600; }
+.badge--ok { background: color-mix(in srgb, var(--green) 14%, transparent); color: var(--green); }
+
+.udhaar-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  margin: 0.75rem 0;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.udhaar-status--on { border-color: var(--blue); box-shadow: 0 0 0 3px var(--blue-soft); }
+.udhaar-status__actions { display: inline-flex; flex-wrap: wrap; gap: 0.5rem; margin-left: auto; }
+
+.udhaar-form { display: grid; gap: 0.6rem; margin: 0.75rem 0 1.25rem; max-width: 40rem; }
+.id-card-sides { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: 0.75rem; }
+.id-card-side__preview { width: 100%; max-height: 10rem; object-fit: contain; border: 1px solid var(--border); border-radius: var(--radius); background: #f4f4f5; }
+.id-card-viewer { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: 0.75rem; }
+.id-card-viewer figure { margin: 0; }
+.id-card-viewer figcaption { text-align: center; color: var(--ink-muted); font-size: 0.85rem; }
+
+.row-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; justify-content: flex-end; }
+
+/* ---------------------------------------------------------------------------------------------
+   Recovery — who owes, most overdue first
+   --------------------------------------------------------------------------------------------- */
+
+/* The figures a page leads with: a label, and one big number. */
+.stat-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: 0.75rem; margin: 0.75rem 0 1rem; }
+.stat-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.85rem 1rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+.stat-tile__label { color: var(--ink-muted); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.03em; }
+.stat-tile__value { font-size: 1.35rem; }
+.stat-tile--alert { border-color: var(--red); }
+.stat-tile--alert .stat-tile__value { color: var(--red); }
+
+.recovery-list { display: grid; gap: 0.75rem; }
+.recovery-card {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.9rem 1rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 5px solid var(--amber);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+.recovery-card--overdue { border-left-color: var(--red); }
+.recovery-card__head { display: flex; justify-content: space-between; align-items: flex-start; gap: 0.75rem; }
+.recovery-card__head h3 { margin: 0 0 0.2rem; }
+.recovery-card__meta { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; color: var(--ink-muted); font-size: 0.85rem; }
+.recovery-card__amount { color: var(--red); font-size: 1.3rem; white-space: nowrap; }
+.recovery-card__when { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; color: var(--ink-muted); font-size: 0.85rem; }
+.recovery-card__actions { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 0.5rem; }
+.recovery-card__bills { margin-top: 0.25rem; }
+
+@media (max-width: 640px) {
+  .recovery-card__head { flex-direction: column; }
+  .recovery-card__amount { font-size: 1.5rem; }
+}
+
+/* The screenshot asked for as money moves by transfer — the same on every payment form. */
+.proof-field {
+  padding: 0.55rem 0.7rem;
+  border: 1px dashed var(--border-firm);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--blue-soft) 60%, transparent);
+}
+
+/* ---------------------------------------------------------------------------------------------
+   Purchases — a supplier's bill, top to bottom, with its summary beside it
+   --------------------------------------------------------------------------------------------- */
+
+.purchase-bill {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 17rem;
+  gap: 1rem;
+  align-items: start;
+  margin: 0.75rem 0 1.5rem;
+}
+.purchase-bill__main { display: grid; gap: 0.85rem; min-width: 0; }
+.purchase-bill__main > h3 { margin: 0; }
+
+.purchase-bill__step {
+  padding: 0.85rem 1rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+.purchase-bill__step h4 { display: flex; align-items: center; gap: 0.5rem; margin: 0 0 0.6rem; }
+.step-number {
+  display: inline-grid;
+  place-items: center;
+  width: 1.6rem;
+  height: 1.6rem;
+  border-radius: 50%;
+  background: var(--blue);
+  color: #fff;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.purchase-bill__row { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: 0.6rem 0.9rem; }
+
+.bill-line-form {
+  margin-top: 0.6rem;
+  padding: 0.75rem;
+  border: 1px dashed var(--border-firm);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--blue-soft) 45%, transparent);
+}
+.bill-line-form h4 { margin: 0 0 0.5rem; }
+.bill-line-form__grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: 0.6rem 0.9rem; }
+
+.purchase-bill__summary {
+  position: sticky;
+  top: 1rem;
+  display: grid;
+  gap: 0.6rem;
+  padding: 1rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-top: 4px solid var(--blue);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+.purchase-bill__summary dl { display: grid; grid-template-columns: 1fr auto; gap: 0.35rem 0.75rem; margin: 0; }
+.purchase-bill__summary dt { color: var(--ink-muted); }
+.purchase-bill__summary dd { margin: 0; text-align: right; font-weight: 700; }
+.purchase-bill__summary button { width: 100%; padding: 0.7rem; font-size: 1rem; }
+
+.bill-detail { display: grid; gap: 0.6rem; padding: 0.25rem 0; }
+.bill-detail-row > td { background: color-mix(in srgb, var(--blue-soft) 35%, transparent); }
+
+@media (max-width: 900px) {
+  .purchase-bill { grid-template-columns: 1fr; }
+  .purchase-bill__summary { position: static; }
+}
