@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { CustomerLedger } from '@/features/customers/CustomerLedger';
 import type { Customer, CustomerSummary, LedgerEntry } from '@/features/customers/customerApi';
@@ -89,9 +89,15 @@ function renderLedger(
 
 const rowFor = (reference: string) => screen.getByText(reference).closest('tr')!;
 
+/** The send buttons sit behind the row's one Share button. */
+function openShare(row: HTMLElement) {
+  fireEvent.click(within(row).getByRole('button', { name: /^share$/i }));
+}
+
 describe('sharing a sale from the ledger', () => {
   it('offers the bill against the sale row', () => {
     renderLedger([sale]);
+    openShare(rowFor('INV-2026-000077'));
 
     expect(within(rowFor('INV-2026-000077')).getByRole('button', { name: /whatsapp/i }))
       .toBeInTheDocument();
@@ -100,6 +106,7 @@ describe('sharing a sale from the ledger', () => {
   it('addresses the document the row points at', async () => {
     const user = userEvent.setup();
     const { onCreateShareLink } = renderLedger([sale]);
+    openShare(rowFor('INV-2026-000077'));
 
     await user.click(within(rowFor('INV-2026-000077')).getByRole('button', { name: /whatsapp/i }));
 
@@ -110,6 +117,7 @@ describe('sharing a sale from the ledger', () => {
 describe('sharing a payment acknowledgement from the ledger', () => {
   it('offers a receipt against the payment row', () => {
     renderLedger([payment]);
+    openShare(rowFor('RCP-2026-000012'));
 
     expect(within(rowFor('RCP-2026-000012')).getByRole('button', { name: /whatsapp/i }))
       .toBeInTheDocument();
@@ -118,6 +126,7 @@ describe('sharing a payment acknowledgement from the ledger', () => {
   it('asks for the receipt, not the invoice', async () => {
     const user = userEvent.setup();
     const { onCreateShareLink } = renderLedger([payment]);
+    openShare(rowFor('RCP-2026-000012'));
 
     await user.click(within(rowFor('RCP-2026-000012')).getByRole('button', { name: /whatsapp/i }));
 
@@ -141,6 +150,7 @@ describe('ledger rows that are not documents', () => {
     const row = screen.getByText(/brought forward from the register/i).closest('tr')!;
 
     expect(within(row).queryByRole('button', { name: /whatsapp/i })).not.toBeInTheDocument();
+    expect(within(row).queryByRole('button', { name: /^share$/i })).not.toBeInTheDocument();
   });
 });
 
@@ -149,6 +159,7 @@ describe('a customer with no number on file', () => {
     renderLedger([payment], { customer: { ...customer, mobileNumber: null } as Customer });
 
     const row = rowFor('RCP-2026-000012');
+    openShare(row);
 
     expect(within(row).getByRole('button', { name: /whatsapp/i })).toBeDisabled();
     expect(within(row).getByRole('button', { name: /print/i })).toBeEnabled();

@@ -182,7 +182,7 @@ describe('ReceivePaymentModal', () => {
     fireEvent.change(screen.getByLabelText(/amount received/i), { target: { value: '300' } });
     await user.click(screen.getByRole('button', { name: /record payment/i }));
 
-    await waitFor(() => expect(onReceive).toHaveBeenCalledWith(300, 'Cash', null, false));
+    await waitFor(() => expect(onReceive).toHaveBeenCalledWith(300, 'Cash', null, false, null));
   });
 
   it('passes along a note', async () => {
@@ -193,7 +193,7 @@ describe('ReceivePaymentModal', () => {
     await user.type(screen.getByLabelText('Note'), 'Paid at shop');
     await user.click(screen.getByRole('button', { name: /record payment/i }));
 
-    await waitFor(() => expect(onReceive).toHaveBeenCalledWith(300, 'Cash', 'Paid at shop', false));
+    await waitFor(() => expect(onReceive).toHaveBeenCalledWith(300, 'Cash', 'Paid at shop', false, null));
   });
 
   it('warns before submitting when the amount exceeds the balance', () => {
@@ -228,7 +228,7 @@ describe('ReceivePaymentModal', () => {
     const confirm = screen.getByRole('button', { name: /yes, accept the extra/i });
     await user.click(confirm);
 
-    await waitFor(() => expect(onReceive).toHaveBeenLastCalledWith(900, 'Cash', null, true));
+    await waitFor(() => expect(onReceive).toHaveBeenLastCalledWith(900, 'Cash', null, true, null));
   });
 
   it('does not offer credit or partial as a payment method', () => {
@@ -255,5 +255,32 @@ describe('ReceivePaymentModal', () => {
     await user.click(screen.getByRole('button', { name: /record payment/i }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/was not found/i);
+  });
+});
+
+describe('ReceivePaymentModal — the screenshot, as the payment is taken', () => {
+  function renderModal() {
+    const onReceive = vi.fn().mockResolvedValue(undefined);
+    render(<ReceivePaymentModal customerName="Bilal" outstandingBalance={500} onReceive={onReceive} onCancel={vi.fn()} />);
+    return onReceive;
+  }
+
+  it('never asks for one on a cash payment', () => {
+    renderModal();
+
+    expect(screen.queryByLabelText(/screenshot/i)).not.toBeInTheDocument();
+  });
+
+  it('takes one on a transfer, and hands it on with the payment', async () => {
+    const user = userEvent.setup();
+    const onReceive = renderModal();
+
+    fireEvent.change(screen.getByLabelText(/amount received/i), { target: { value: '300' } });
+    await user.selectOptions(screen.getByLabelText(/method/i), 'JazzCash');
+    const shot = new File(['jpeg'], 'transfer.jpg', { type: 'image/jpeg' });
+    await user.upload(screen.getByLabelText(/screenshot/i), shot);
+    await user.click(screen.getByRole('button', { name: /record payment/i }));
+
+    await waitFor(() => expect(onReceive).toHaveBeenCalledWith(300, 'JazzCash', null, false, shot));
   });
 });

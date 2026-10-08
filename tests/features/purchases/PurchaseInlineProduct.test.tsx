@@ -25,6 +25,15 @@ vi.mock('@/features/suppliers/supplierApi', () => ({
   purchaseApi: { search: vi.fn(), record: vi.fn() },
 }));
 
+vi.mock('@/features/purchases/purchaseBillApi', () => ({
+  purchaseBillApi: { list: vi.fn().mockResolvedValue([]), get: vi.fn(), record: vi.fn(), pay: vi.fn() },
+}));
+
+vi.mock('@/features/shopAccounts/shopAccountApi', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/features/shopAccounts/shopAccountApi')>();
+  return { ...actual, shopAccountApi: { ...actual.shopAccountApi, list: vi.fn().mockResolvedValue([]) } };
+});
+
 vi.mock('@/features/taxonomy/taxonomyApi', () => ({
   categoryApi: { search: vi.fn() },
   brandApi: { search: vi.fn() },
@@ -66,7 +75,7 @@ function renderPage() {
 
 async function searchForSomethingThatDoesNotExist() {
   await userEvent.type(
-    screen.getByLabelText(/which product did you buy/i),
+    (await screen.findByLabelText(/which product did you buy/i)),
     'Wireless Charger',
   );
 
@@ -127,10 +136,10 @@ describe('buying a product that does not exist yet', () => {
 
     await waitFor(() => expect(productApi.create).toHaveBeenCalled());
 
-    // The point of the feature: no second search, no navigating back. The purchase form for
-    // the product just created is already on screen.
-    expect(await screen.findByLabelText(/supplier/i)).toBeInTheDocument();
-    expect(screen.getByText(/Wireless Charger 15W/)).toBeInTheDocument();
+    // The point of the feature: no second search, no navigating back. The bill's line for the
+    // product just created is already on screen, ready for its cost and quantity.
+    expect(await screen.findByRole('button', { name: /add to bill/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /Wireless Charger 15W/ })).toBeInTheDocument();
   });
 
   it('creates nothing when the form is cancelled', async () => {
@@ -141,14 +150,14 @@ describe('buying a product that does not exist yet', () => {
     await userEvent.click(await screen.findByRole('button', { name: /cancel/i }));
 
     expect(productApi.create).not.toHaveBeenCalled();
-    expect(screen.getByLabelText(/which product did you buy/i)).toBeInTheDocument();
+    expect((await screen.findByLabelText(/which product did you buy/i))).toBeInTheDocument();
   });
 
   it('does not offer creation while the search still matches something', async () => {
     vi.mocked(productApi.search).mockResolvedValue(page([created]) as never);
 
     renderPage();
-    await userEvent.type(screen.getByLabelText(/which product did you buy/i), 'Wireless');
+    await userEvent.type((await screen.findByLabelText(/which product did you buy/i)), 'Wireless');
 
     await screen.findByText('Wireless Charger 15W');
     expect(screen.queryByRole('button', { name: /create.*product/i })).not.toBeInTheDocument();
@@ -162,7 +171,7 @@ describe('a search too short for the server', () => {
     // The server refuses a search made only of one-letter words (FR-079). Sending it produced
     // a 400 at the counter and, worse, hid the "create a new product" offer behind an error —
     // exactly when the owner is trying to buy something that does not exist yet.
-    await userEvent.type(screen.getByLabelText(/which product did you buy/i), 'c');
+    await userEvent.type((await screen.findByLabelText(/which product did you buy/i)), 'c');
 
     expect(await screen.findByText(/at least 2 letters/i)).toBeInTheDocument();
     expect(productApi.search).not.toHaveBeenCalled();
@@ -171,7 +180,7 @@ describe('a search too short for the server', () => {
   it('searches as soon as the word is long enough', async () => {
     renderPage();
 
-    await userEvent.type(screen.getByLabelText(/which product did you buy/i), 'ca');
+    await userEvent.type((await screen.findByLabelText(/which product did you buy/i)), 'ca');
 
     await waitFor(() =>
       expect(productApi.search).toHaveBeenCalledWith(

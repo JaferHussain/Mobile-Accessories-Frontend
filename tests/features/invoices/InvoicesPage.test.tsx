@@ -126,6 +126,7 @@ describe('InvoicesPage', () => {
     const dialog = await screen.findByRole('dialog');
 
     expect(within(dialog).getByRole('button', { name: /print/i })).toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: /^share$/i }));
     expect(within(dialog).getByRole('button', { name: /whatsapp/i })).toBeInTheDocument();
     expect(within(dialog).getByRole('button', { name: /sms/i })).toBeInTheDocument();
   });
@@ -148,6 +149,7 @@ describe('InvoicesPage', () => {
     await user.click(within(row).getByRole('button', { name: /give to customer/i }));
 
     const dialog = await screen.findByRole('dialog');
+    await user.click(within(dialog).getByRole('button', { name: /^share$/i }));
 
     expect(within(dialog).getByLabelText(/mobile number/i)).toBeInTheDocument();
   });

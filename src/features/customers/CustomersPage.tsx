@@ -5,7 +5,9 @@ import { CustomerLedger } from './CustomerLedger';
 import { documentApi } from '@/features/documents/documentApi';
 import { ShareButtons } from '@/features/documents/ShareButtons';
 import { ReceivePaymentModal } from './ReceivePaymentModal';
+import { attachProofAfterSave, proofOutcomeText, type ProofOutcome } from '@/features/proofs/proofApi';
 import { OpeningBalanceForm } from './OpeningBalanceForm';
+import { UdhaarStatusPanel } from '@/features/udhaar/UdhaarStatusPanel';
 import { useAuth } from '@/features/auth/AuthContext';
 import { QueryState } from '@/components/QueryState';
 import { formatPkr } from '@/lib/money';
@@ -20,6 +22,7 @@ function CustomerDetail({ customer, onBack }: { customer: Customer; onBack: () =
   // The payment just taken, kept so the acknowledgement can be sent while the customer is still
   // standing there. Finding them again in the register afterwards is the step that never happens.
   const [justPaid, setJustPaid] = useState<ReceivePaymentResult | null>(null);
+  const [proofOutcome, setProofOutcome] = useState<ProofOutcome>('none');
   // Only the owner may record what a customer owed on paper (FR-068).
   const [isSettingOpening, setIsSettingOpening] = useState(false);
 
@@ -45,6 +48,7 @@ function CustomerDetail({ customer, onBack }: { customer: Customer; onBack: () =
       method: PaymentMethod;
       note: string | null;
       confirmOverpayment: boolean;
+      proofFile: File | null;
     }) =>
       customerApi.receivePayment(
         customer.id,
@@ -53,7 +57,8 @@ function CustomerDetail({ customer, onBack }: { customer: Customer; onBack: () =
         input.note,
         input.confirmOverpayment,
       ),
-    onSuccess: async (result) => {
+    onSuccess: async (result, input) => {
+      setProofOutcome(await attachProofAfterSave('customer-payment', result.paymentId, input.proofFile, input.method));
       setJustPaid(result);
 
       // The balance, the register and the totals all moved together on the server.
@@ -107,9 +112,13 @@ function CustomerDetail({ customer, onBack }: { customer: Customer; onBack: () =
                 : documentApi.paymentReceiptPdf(referenceId)
             }
             onCreateShareLink={documentApi.createShareLink}
+            onCreateReminder={customerApi.reminder}
           />
         )}
       </QueryState>
+
+      {/* Make udhaar customer / the badge and ID card — the owner's only. */}
+      {isAdmin && <UdhaarStatusPanel key={shown.id} customerId={shown.id} />}
 
       {isAdmin && !isSettingOpening && (
         <button type="button" onClick={() => setIsSettingOpening(true)}>
@@ -137,6 +146,7 @@ function CustomerDetail({ customer, onBack }: { customer: Customer; onBack: () =
             {justPaid.balanceAfter > 0
               ? `${formatPkr(justPaid.balanceAfter)} still owed.`
               : 'Account settled.'}
+            {proofOutcomeText(proofOutcome)}
           </p>
 
           <ShareButtons
@@ -160,8 +170,8 @@ function CustomerDetail({ customer, onBack }: { customer: Customer; onBack: () =
         <ReceivePaymentModal
           customerName={customer.name}
           outstandingBalance={(current.data ?? customer).outstandingBalance}
-          onReceive={async (amount, method, note, confirmOverpayment) => {
-            await receive.mutateAsync({ amount, method, note, confirmOverpayment });
+          onReceive={async (amount, method, note, confirmOverpayment, proofFile) => {
+            await receive.mutateAsync({ amount, method, note, confirmOverpayment, proofFile });
           }}
           onCancel={() => setIsReceiving(false)}
         />
@@ -260,7 +270,10 @@ export function CustomersPage() {
               <tr key={customer.id}>
                 <td>{customer.name}</td>
                 <td>{customer.mobileNumber ?? '—'}</td>
-                <td>{customer.saleType}</td>
+                <td>
+                  {customer.saleType}
+                  {customer.creditAllowed && <span className="badge"> · udhaar customer</span>}
+                </td>
                 <td className={`numeric${customer.outstandingBalance > 0 ? ' owing' : ''}`}>
                   {formatPkr(customer.outstandingBalance)}
                 </td>

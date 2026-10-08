@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { invoiceApi, type InvoiceListRow } from './invoiceApi';
 import { documentApi } from '@/features/documents/documentApi';
 import { ShareButtons } from '@/features/documents/ShareButtons';
@@ -7,6 +7,8 @@ import { ShareLinksPanel } from '@/features/documents/ShareLinksPanel';
 import { useAuth } from '@/features/auth/AuthContext';
 import { QueryState } from '@/components/QueryState';
 import { formatPkr } from '@/lib/money';
+import { ProofAttachment } from '@/features/proofs/ProofAttachment';
+import { needsProof } from '@/features/proofs/proofApi';
 
 /**
  * Past sales, so a bill can be produced again.
@@ -23,6 +25,7 @@ export function InvoicesPage() {
   // Revoking is the owner's: containment over something already released. Sharing stays open to
   // a salesman, who is the one serving the customer.
   const { isAdmin } = useAuth();
+  const queryClient = useQueryClient();
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
 
@@ -134,6 +137,19 @@ export function InvoicesPage() {
               onFetchDocument={(_documentType, referenceId) => documentApi.invoicePdf(referenceId)}
               onCreateShareLink={documentApi.createShareLink}
             />
+
+            {/* The sale's own proof — only for a transfer; cash was counted into the drawer. */}
+            {needsProof(sharing.paymentMethod) && (
+              <div className="modal__proof">
+                <span>Payment proof ({sharing.paymentMethod})</span>
+                <ProofAttachment
+                  kind="sale"
+                  id={sharing.id}
+                  hasProof={sharing.hasProof ?? false}
+                  onAttached={() => void queryClient.invalidateQueries({ queryKey: ['invoices'] })}
+                />
+              </div>
+            )}
 
             {isAdmin && (
               <ShareLinksPanel

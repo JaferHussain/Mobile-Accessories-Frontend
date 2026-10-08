@@ -1,9 +1,33 @@
 import { useState, type FormEvent } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supplierApi, type Supplier, type SupplierUpsert } from './supplierApi';
+import { PAYMENT_METHODS, type PaymentMethod } from '@/features/pos/posApi';
+import { accountLabel, accountsFor, shopAccountApi } from '@/features/shopAccounts/shopAccountApi';
 import { QueryState } from '@/components/QueryState';
 import { formatPkr } from '@/lib/money';
 import { ApiError, ErrorCodes } from '@/types/api';
+import { ProofFileField } from '@/features/proofs/ProofFileField';
+import { attachProofAfterSave, needsProof, proofOutcomeText } from '@/features/proofs/proofApi';
+
+/**
+ * The real ways money reaches a supplier. Credit and Partial describe an unpaid SALE; the server
+ * refuses them on a supplier payment, so they are never offered.
+ */
+const SUPPLIER_PAYMENT_METHODS = PAYMENT_METHODS.filter(
+  (method) => method.value !== 'Credit' && method.value !== 'Partial',
+);
+
+export interface SupplierPayment {
+  amount: number;
+  paymentMethod: PaymentMethod;
+  note: string | null;
+  confirmOverpayment: boolean;
+  /** Which shop account paid. Only for a transfer, and optional. */
+  shopAccountId: number | null;
+  /** A transfer's screenshot, chosen as the payment is recorded. Null when none was. */
+  proofFile: File | null;
+}
 
 function PayModal({
   supplier,
@@ -11,10 +35,21 @@ function PayModal({
   onCancel,
 }: {
   supplier: Supplier;
-  onPay: (amount: number, confirmOverpayment: boolean) => Promise<void>;
+  onPay: (payment: SupplierPayment) => Promise<void>;
   onCancel: () => void;
 }) {
   const [amount, setAmount] = useState(0);
+  // Starts unanswered, on purpose. A Cash default is what put every bank transfer to a supplier
+  // into the evening's drawer count as a short — day close subtracts Cash payments only.
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | ''>('');
+  const [note, setNote] = useState('');
+  const [shopAccountId, setShopAccountId] = useState<number | ''>('');
+  const [proofFile, setProofFile] = useState<File | null>(null);
+
+  // Loaded when the box opens, not with the supplier list: most visits to Suppliers pay no one.
+  const accounts = useQuery({ queryKey: ['shop-accounts', 'active'], queryFn: () => shopAccountApi.list() });
+  const offeredAccounts = accountsFor(accounts.data ?? [], paymentMethod);
+  const isTransfer = paymentMethod !== '' && paymentMethod !== 'Cash';
   const [error, setError] = useState<string | null>(null);
   const [needsConfirmation, setNeedsConfirmation] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -27,10 +62,23 @@ function PayModal({
       return;
     }
 
+    if (paymentMethod === '') {
+      setError('Say how the supplier was paid — cash, bank transfer, JazzCash…');
+      return;
+    }
+
     setIsSaving(true);
 
     try {
-      await onPay(amount, confirmOverpayment);
+      await onPay({
+        amount,
+        paymentMethod,
+        // Blank is "not given", sent as null rather than an empty string.
+        note: note.trim() || null,
+        confirmOverpayment,
+        shopAccountId: isTransfer && shopAccountId !== '' ? shopAccountId : null,
+        proofFile: needsProof(paymentMethod) ? proofFile : null,
+      });
     } catch (caught) {
       if (caught instanceof ApiError && caught.code === ErrorCodes.OverpaymentNotConfirmed) {
         setNeedsConfirmation(true);
@@ -74,6 +122,60 @@ function PayModal({
               setAmount(Number(event.target.value));
               setNeedsConfirmation(false);
             }}
+          />
+        </div>
+
+        <div className="field">
+          <label htmlFor="supplierPayMethod">Paid by</label>
+          <select
+            id="supplierPayMethod"
+            value={paymentMethod}
+            onChange={(event) => {
+              setPaymentMethod(event.target.value as PaymentMethod | '');
+              // An account chosen for one method may not carry another.
+              setShopAccountId('');
+            }}
+          >
+            <option value="" disabled>
+              Choose how it was paid
+            </option>
+            {SUPPLIER_PAYMENT_METHODS.map((method) => (
+              <option key={method.value} value={method.value}>
+                {method.label}
+              </option>
+            ))}
+          </select>
+          <small className="field__hint">Only a cash payment is taken out of the drawer at day close.</small>
+        </div>
+
+        {isTransfer && (
+          <div className="field">
+            <label htmlFor="supplierPayAccount">From account</label>
+            <select
+              id="supplierPayAccount"
+              value={shopAccountId}
+              onChange={(event) => setShopAccountId(event.target.value ? Number(event.target.value) : '')}
+            >
+              <option value="">Not recorded</option>
+              {offeredAccounts.map((account) => (
+                <option key={account.id} value={account.id}>
+                  {accountLabel(account)}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        <ProofFileField id="supplierPayProof" method={paymentMethod} onFile={setProofFile} />
+
+        <div className="field">
+          <label htmlFor="supplierPayNote">Reference (optional)</label>
+          <input
+            id="supplierPayNote"
+            maxLength={255}
+            placeholder="Cheque or transaction number"
+            value={note}
+            onChange={(event) => setNote(event.target.value)}
           />
         </div>
 
@@ -150,11 +252,18 @@ export function SuppliersPage() {
       setCreateError(caught instanceof ApiError ? caught.message : 'Could not save the supplier.'),
   });
 
+  const navigate = useNavigate();
+  const [payNotice, setPayNotice] = useState<string | null>(null);
+
   const pay = useMutation({
-    mutationFn: (input: { id: number; amount: number; confirmOverpayment: boolean }) =>
-      supplierApi.recordPayment(input.id, input.amount, 'Cash', null, input.confirmOverpayment),
-    onSuccess: async () => {
+    mutationFn: (input: SupplierPayment & { id: number }) =>
+      supplierApi.recordPayment(
+        input.id, input.amount, input.paymentMethod, input.note, input.confirmOverpayment, input.shopAccountId,
+      ),
+    onSuccess: async (result, input) => {
+      const proof = await attachProofAfterSave('supplier-payment', result.paymentId, input.proofFile, input.paymentMethod);
       await queryClient.invalidateQueries({ queryKey: ['suppliers'] });
+      setPayNotice(`Payment recorded.${proofOutcomeText(proof)}`);
       setPaying(null);
     },
   });
@@ -164,6 +273,12 @@ export function SuppliersPage() {
       <header className="page-header">
         <h2>Suppliers</h2>
       </header>
+
+      {payNotice && (
+        <p className="form-success" role="status">
+          {payNotice}
+        </p>
+      )}
 
       <form
         className="supplier-form"
@@ -338,6 +453,13 @@ export function SuppliersPage() {
                   >
                     Pay
                   </button>
+                  {/* Every purchase, return and payment behind "You owe". */}
+                  <button
+                    type="button"
+                    onClick={() => navigate(`/supplier-ledger?supplierId=${supplier.id}`)}
+                  >
+                    Ledger
+                  </button>
                   <button
                     type="button"
                     onClick={() => {
@@ -369,8 +491,8 @@ export function SuppliersPage() {
       {paying && (
         <PayModal
           supplier={paying}
-          onPay={async (amount, confirmOverpayment) => {
-            await pay.mutateAsync({ id: paying.id, amount, confirmOverpayment });
+          onPay={async (payment) => {
+            await pay.mutateAsync({ id: paying.id, ...payment });
           }}
           onCancel={() => setPaying(null)}
         />

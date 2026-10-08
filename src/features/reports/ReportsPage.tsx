@@ -17,6 +17,7 @@ import {
 import { QueryState } from '@/components/QueryState';
 import { LowStockBadge } from '@/components/LowStockBadge';
 import { formatPkr } from '@/lib/money';
+import { shopMonthStart, shopToday } from '@/lib/shopDay';
 
 type ReportName =
   | 'sales-by-type'
@@ -51,19 +52,12 @@ const RANGED: ReadonlySet<ReportName> = new Set([
   'stock-movements',
 ]);
 
-function startOfMonth(): string {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
-}
-
-function today(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
 export function ReportsPage() {
   const [report, setReport] = useState<ReportName>('profit');
-  const [from, setFrom] = useState(startOfMonth());
-  const [to, setTo] = useState(today());
+  // Both from the shop's own day: one from the device's date and one from UTC ran backwards on
+  // the 1st of every month before 5 a.m.
+  const [from, setFrom] = useState(shopMonthStart());
+  const [to, setTo] = useState(shopToday());
   const [groupBy, setGroupBy] = useState<ReportGrouping>('Day');
 
   // Which half of the split the owner has opened, if any. Null means the totals are on screen.

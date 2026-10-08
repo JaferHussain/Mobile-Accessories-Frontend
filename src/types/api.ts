@@ -33,6 +33,8 @@ export interface AuthUser {
   username: string;
   fullName: string;
   role: UserRole;
+  /** A staff member's work — Counter or FieldSales. Null for the owner. */
+  job?: 'Counter' | 'FieldSales' | null;
 }
 
 export interface AuthResponse {

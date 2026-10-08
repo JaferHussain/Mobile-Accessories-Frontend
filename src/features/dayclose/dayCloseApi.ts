@@ -10,6 +10,8 @@ export interface DayClosing {
   /** All computed by the server from what was recorded. Cash only. */
   cashSales: number;
   cashRecovery: number;
+  /** Cash a field salesman handed over that day — his market cash joins the drawer only then. */
+  cashFromSalesmen: number;
   cashRefunds: number;
   cashPaidOut: number;
   /** Supplier bills settled in cash. Kept apart from cashPaidOut: buying stock and paying the

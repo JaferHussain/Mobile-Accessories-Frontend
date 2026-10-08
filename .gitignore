@@ -22,3 +22,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Local environment overrides. .env.production is tracked on purpose: it holds only the
+# public API address, which is baked into the bundle anyway.
+.env

@@ -98,7 +98,9 @@ describe('the counter after a cash sale', () => {
 
   it('lets the confirmation fade by itself', async () => {
     const user = userEvent.setup();
-    setup({ confirmationVisibleMs: 50 });
+    // Long enough to be seen: `sell` waits for the "Saved" text by polling every 50 ms, so a
+    // confirmation that lived only 50 ms could come and go between two looks and fail at random.
+    setup({ confirmationVisibleMs: 400 });
 
     await sell(user);
     expect(screen.getByRole('status')).toBeInTheDocument();
@@ -184,6 +186,7 @@ describe('sharing from the counter', () => {
     await sell(user, /bank transfer/i);
 
     expect(screen.getByRole('button', { name: /print/i })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /^share$/i }));
     expect(screen.getByRole('button', { name: /whatsapp/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /sms/i })).toBeInTheDocument();
   });
@@ -199,6 +202,7 @@ describe('sharing from the counter', () => {
     await sell(user, /bank transfer/i);
 
     // This sale had no customer, so there is no record to read a number from.
+    await user.click(screen.getByRole('button', { name: /^share$/i }));
     expect(screen.getByLabelText(/mobile number/i)).toBeInTheDocument();
   });
 });

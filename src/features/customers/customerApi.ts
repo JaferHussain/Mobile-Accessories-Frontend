@@ -16,6 +16,8 @@ export interface Customer {
   isActive: boolean;
   /** A standing label the owner sets (feature 004) — never derived from their invoices. */
   saleType: 'Retail' | 'Wholesale';
+  /** A registered udhaar customer — may be sold to on full udhaar. Set only through Udhaar customers. */
+  creditAllowed?: boolean;
 }
 
 export type LedgerEntryType =
@@ -36,6 +38,10 @@ export interface LedgerEntry {
   billAmount: number;
   paidAmount: number;
   balanceAfter: number;
+  /** How a sale or payment was paid. Absent for every other kind of entry. */
+  paymentMethod?: string | null;
+  /** Whether that sale or payment has its proof attached. */
+  hasProof?: boolean;
 }
 
 export interface CustomerSummary {
@@ -50,6 +56,21 @@ export interface ReceivePaymentResult {
   receiptNumber: string;
   amount: number;
   balanceAfter: number;
+}
+
+/**
+ * A payment reminder, prepared by the server. Links are null when the customer has no usable
+ * number. The due date is one month after the oldest purchase still unpaid, rolled forward a
+ * month at a time once passed — worked out there, never here.
+ */
+export interface PaymentReminder {
+  whatsAppUrl: string | null;
+  smsUrl: string | null;
+  outstanding: number;
+  /** A calendar date, `yyyy-mm-dd`, in the shop's own day. */
+  unpaidSince: string;
+  dueOn: string;
+  monthsOverdue: number;
 }
 
 export interface OpeningBalanceResult {
@@ -88,6 +109,11 @@ export const customerApi = {
     return unwrap(
       api.get<ApiEnvelope<PagedResult<Customer>>>('/customers', { params }),
     );
+  },
+
+  /** What this customer owes today and by when, as WhatsApp and SMS messages. 422 when nothing is owed. */
+  reminder(id: number): Promise<PaymentReminder> {
+    return unwrap(api.get<ApiEnvelope<PaymentReminder>>(`/customers/${id}/reminder`));
   },
 
   get(id: number): Promise<Customer> {

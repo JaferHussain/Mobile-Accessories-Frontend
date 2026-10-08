@@ -243,7 +243,8 @@ describe('SaleReturnForm submission', () => {
     await user.click(screen.getByRole('button', { name: /record return/i }));
 
     await waitFor(() =>
-      expect(onSubmit).toHaveBeenCalledWith([{ invoiceItemId: 11, quantity: 2 }], null),
+      // Nothing refunded — the return only reduces what is owed — so no refund method.
+      expect(onSubmit).toHaveBeenCalledWith([{ invoiceItemId: 11, quantity: 2 }], null, null, null),
     );
   });
 
@@ -259,8 +260,46 @@ describe('SaleReturnForm submission', () => {
       expect(onSubmit).toHaveBeenCalledWith(
         [{ invoiceItemId: 11, quantity: 1 }],
         'Faulty charger',
+        null,
+        null,
       ),
     );
+  });
+
+  it('asks how a refund was handed back, with nothing chosen in advance', async () => {
+    // A settled sale: every rupee returned goes back to the customer.
+    renderForm(vi.fn().mockResolvedValue(undefined), 0);
+
+    setQty('Type-C Braided 2m', '1');
+
+    // Assuming cash is what showed every JazzCash refund as the drawer running over.
+    expect(screen.getByLabelText(/refunded by/i)).toHaveValue('');
+  });
+
+  it('will not record a refund until it says how it was paid', async () => {
+    const user = userEvent.setup();
+    const onSubmit = renderForm(vi.fn().mockResolvedValue(undefined), 0);
+
+    setQty('Type-C Braided 2m', '1');
+    await user.click(screen.getByRole('button', { name: /record return/i }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/how the refund/i);
+    expect(onSubmit).not.toHaveBeenCalled();
+
+    await user.selectOptions(screen.getByLabelText(/refunded by/i), 'JazzCash');
+    await user.click(screen.getByRole('button', { name: /record return/i }));
+
+    await waitFor(() =>
+      expect(onSubmit).toHaveBeenCalledWith([{ invoiceItemId: 11, quantity: 1 }], null, 'JazzCash', null),
+    );
+  });
+
+  it('does not ask how when nothing is refunded', () => {
+    renderForm(vi.fn().mockResolvedValue(undefined), 100_000);
+
+    setQty('Type-C Braided 2m', '1');
+
+    expect(screen.queryByLabelText(/refunded by/i)).not.toBeInTheDocument();
   });
 
   it('shows the server message when the return is refused', async () => {
@@ -277,5 +316,34 @@ describe('SaleReturnForm submission', () => {
     await user.click(screen.getByRole('button', { name: /record return/i }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/cannot return 5/i);
+  });
+});
+
+describe('SaleReturnForm — the refund screenshot, as the return is recorded', () => {
+  it('takes one for a transfer refund and hands it on', async () => {
+    const user = userEvent.setup();
+    const onSubmit = renderForm(vi.fn().mockResolvedValue(undefined), 0);
+
+    setQty('Type-C Braided 2m', '1');
+    expect(screen.queryByLabelText(/screenshot/i)).not.toBeInTheDocument();
+
+    await user.selectOptions(screen.getByLabelText(/refunded by/i), 'EasyPaisa');
+    const shot = new File(['jpeg'], 'transfer.jpg', { type: 'image/jpeg' });
+    await user.upload(screen.getByLabelText(/screenshot/i), shot);
+    await user.click(screen.getByRole('button', { name: /record return/i }));
+
+    await waitFor(() =>
+      expect(onSubmit).toHaveBeenCalledWith([{ invoiceItemId: 11, quantity: 1 }], null, 'EasyPaisa', shot),
+    );
+  });
+
+  it('never asks for one on a cash refund', async () => {
+    const user = userEvent.setup();
+    renderForm(vi.fn().mockResolvedValue(undefined), 0);
+
+    setQty('Type-C Braided 2m', '1');
+    await user.selectOptions(screen.getByLabelText(/refunded by/i), 'Cash');
+
+    expect(screen.queryByLabelText(/screenshot/i)).not.toBeInTheDocument();
   });
 });

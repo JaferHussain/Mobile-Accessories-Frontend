@@ -151,6 +151,27 @@ describe('adding to the cart from the Products list', () => {
     ).toBeDisabled();
   });
 
+  it('refuses to add something the shop owns but is all out with the salesman', async () => {
+    // Owned, but not on the shelf: the counter cannot sell it, and the server would say so.
+    vi.mocked(productApi.search).mockResolvedValue(
+      page([{ ...cable, quantityOnHand: 4, atShop: 0, withSalesmen: 4, inYourBag: null }]),
+    );
+    renderPage();
+
+    expect(await screen.findByRole('button', { name: `Add ${cable.name} to cart` })).toBeDisabled();
+    expect(screen.getByTestId('stock-count')).toHaveTextContent('0 in shop · +4 with salesman');
+  });
+
+  it('lets the salesman add what is in his bag, and tells him how many he has', async () => {
+    vi.mocked(productApi.search).mockResolvedValue(
+      page([{ ...cable, quantityOnHand: 10, atShop: 0, withSalesmen: 10, inYourBag: 3 }]),
+    );
+    renderPage();
+
+    expect(await screen.findByRole('button', { name: `Add ${cable.name} to cart` })).toBeEnabled();
+    expect(screen.getByTestId('stock-count')).toHaveTextContent('3 with you');
+  });
+
   it('leaves the cart alone when the price cannot be read', async () => {
     const user = userEvent.setup();
     vi.mocked(productApi.get).mockRejectedValue(new Error('offline'));

@@ -2,7 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { BackupPanel } from './BackupPanel';
 import { AuditLogViewer } from './AuditLogViewer';
-import { adminApi } from './adminApi';
+import { adminApi, STAFF_JOBS, type StaffJob } from './adminApi';
 import { QueryState } from '@/components/QueryState';
 import { ApiError, type UserRole } from '@/types/api';
 
@@ -13,13 +13,14 @@ function UsersPanel() {
   const [fullName, setFullName] = useState('');
   const [password, setPassword] = useState('');
   const [role, setRole] = useState<UserRole>('Staff');
+  const [job, setJob] = useState<StaffJob>('Counter');
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
   const users = useQuery({ queryKey: ['users'], queryFn: () => adminApi.users() });
 
   const create = useMutation({
-    mutationFn: () => adminApi.createUser(username.trim(), fullName.trim(), password, role),
+    mutationFn: () => adminApi.createUser(username.trim(), fullName.trim(), password, role, role === 'Staff' ? job : null),
     onSuccess: async (user) => {
       await queryClient.invalidateQueries({ queryKey: ['users'] });
       setMessage(`Created ${user.username} as ${user.role}.`);
@@ -30,6 +31,12 @@ function UsersPanel() {
     },
     onError: (caught) =>
       setError(caught instanceof ApiError ? caught.message : 'Could not create the user.'),
+  });
+
+  const changeJob = useMutation({
+    mutationFn: ({ id, newJob }: { id: number; newJob: StaffJob }) => adminApi.setJob(id, newJob),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['users'] }),
+    onError: (caught) => setError(caught instanceof ApiError ? caught.message : 'Could not change the job.'),
   });
 
   function submit(event: FormEvent) {
@@ -50,6 +57,7 @@ function UsersPanel() {
 
       <p className="admin-note">
         A Staff account can sell and take payments, but never sees cost prices, profit or reports.
+        Its job says which work: the counter (shopkeeper) or field sales (salesman in the market).
       </p>
 
       {message && (
@@ -105,6 +113,20 @@ function UsersPanel() {
           </select>
         </div>
 
+        {/* The owner is the owner; only staff have a job. */}
+        {role === 'Staff' && (
+          <div className="field">
+            <label htmlFor="newJob">Job</label>
+            <select id="newJob" value={job} onChange={(event) => setJob(event.target.value as StaffJob)}>
+              {STAFF_JOBS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
         <button type="submit" disabled={create.isPending}>
           Add
         </button>
@@ -118,6 +140,7 @@ function UsersPanel() {
               <th scope="col">Username</th>
               <th scope="col">Name</th>
               <th scope="col">Role</th>
+              <th scope="col">Job</th>
               <th scope="col">Active</th>
             </tr>
           </thead>
@@ -127,6 +150,23 @@ function UsersPanel() {
                 <td>{user.username}</td>
                 <td>{user.fullName}</td>
                 <td>{user.role}</td>
+                <td>
+                  {user.role === 'Staff' ? (
+                    <select
+                      aria-label={`Job for ${user.fullName}`}
+                      value={user.job ?? 'Counter'}
+                      onChange={(event) => changeJob.mutate({ id: user.id, newJob: event.target.value as StaffJob })}
+                    >
+                      {STAFF_JOBS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    'Owner'
+                  )}
+                </td>
                 <td>{user.isActive ? 'Yes' : 'No'}</td>
               </tr>
             ))}

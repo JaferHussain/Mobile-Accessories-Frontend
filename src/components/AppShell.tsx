@@ -6,6 +6,8 @@ interface NavItem {
   to: string;
   label: string;
   adminOnly?: boolean;
+  /** Only the salesman in the market — his own sales, cash and commission. */
+  fieldSalesOnly?: boolean;
 }
 
 interface NavGroup {
@@ -23,7 +25,11 @@ interface NavGroup {
 
 /** The owner's overview. Everything else belongs to a group. */
 const TOP_LEVEL: NavItem[] = [
+  // The salesman's own screen, first in his rail: he opens it on his phone between shops.
+  { to: '/my-day', label: 'My day', fieldSalesOnly: true },
   { to: '/dashboard', label: 'Dashboard', adminOnly: true },
+  // Beside the Dashboard: the shop's figures, then the people behind them.
+  { to: '/team', label: 'Team', adminOnly: true },
 ];
 
 /**
@@ -43,6 +49,9 @@ const NAV_GROUPS: NavGroup[] = [
     openByDefault: true,
     items: [
       { to: '/pos', label: 'New sale' },
+      // Its other half, at the owner's request: goods come back over the same counter they left
+      // by. Open to Staff — a salesman takes sale returns.
+      { to: '/sale-returns', label: 'Sale return' },
     ],
   },
   {
@@ -51,9 +60,10 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { to: '/invoices', label: 'Invoices' },
       { to: '/customers', label: 'Customers' },
-      // Not Admin-only: a salesman takes customer returns at the counter. Supplier returns, the
-      // other half of that screen, stay hidden from Staff by the page itself.
-      { to: '/returns', label: 'Returns' },
+      // Everyone who owes, most overdue first — open to staff, who take payments too.
+      { to: '/recovery', label: 'Recovery' },
+      // The only people sold to on full udhaar — registered with phone and ID card by the owner.
+      { to: '/udhaar-customers', label: 'Udhaar customers', adminOnly: true },
     ],
   },
   {
@@ -78,6 +88,11 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { to: '/purchases', label: 'Purchases', adminOnly: true },
       { to: '/suppliers', label: 'Suppliers', adminOnly: true },
+      // The history behind "You owe": every purchase, return and payment with a running balance.
+      { to: '/supplier-ledger', label: 'Supplier ledger', adminOnly: true },
+      // Goods going back to whoever supplied them. Admin-only: it shows purchase cost and the
+      // supplier's payable balance, and the server refuses Staff regardless.
+      { to: '/purchase-returns', label: 'Purchase return', adminOnly: true },
     ],
   },
   {
@@ -87,12 +102,16 @@ const NAV_GROUPS: NavGroup[] = [
       { to: '/expenses', label: 'Expenses', adminOnly: true },
       { to: '/reports', label: 'Reports', adminOnly: true },
       { to: '/day-close', label: 'Day close', adminOnly: true },
+      // Every non-cash transaction still waiting for its screenshot — the owner's daily chase.
+      { to: '/proofs-missing', label: 'Proof missing', adminOnly: true },
     ],
   },
   {
     // The system itself: users, backups, the things that are not the shop's trade.
     label: 'Settings',
     items: [
+      // The shop's own bank and wallet accounts, set up once so payments pick from a list.
+      { to: '/shop-accounts', label: 'Shop accounts', adminOnly: true },
       { to: '/admin', label: 'Admin', adminOnly: true },
     ],
   },
@@ -109,7 +128,9 @@ export function AppShell() {
   const { user, isAdmin, logout } = useAuth();
   const { pathname } = useLocation();
 
-  const visible = (items: NavItem[]) => items.filter((item) => !item.adminOnly || isAdmin);
+  const inField = user?.job === 'FieldSales';
+  const visible = (items: NavItem[]) =>
+    items.filter((item) => (!item.adminOnly || isAdmin) && (!item.fieldSalesOnly || inField));
 
   const groups = NAV_GROUPS
     .map((group) => ({ ...group, items: visible(group.items) }))

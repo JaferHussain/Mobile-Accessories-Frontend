@@ -106,6 +106,8 @@ export interface CustomerSummary {
   name: string;
   mobileNumber?: string | null;
   outstandingBalance: number;
+  /** Marked by the owner as an udhaar customer: a field salesman may sell to them on credit. */
+  creditAllowed?: boolean;
 }
 
 export const posApi = {
@@ -138,9 +140,10 @@ export const posApi = {
     return unwrap(api.post<ApiEnvelope<CustomerSummary>>('/customers', { name, mobileNumber }));
   },
 
+  /** Registered udhaar customers only — the one kind of customer checkout looks up. */
   searchCustomers(search: string): Promise<CustomerSummary[]> {
     return unwrap(
-      api.get<ApiEnvelope<{ items: CustomerSummary[] }>>('/customers', { params: { search } }),
+      api.get<ApiEnvelope<{ items: CustomerSummary[] }>>('/customers', { params: { search, udhaarOnly: true } }),
     ).then((page) => page.items);
   },
 };

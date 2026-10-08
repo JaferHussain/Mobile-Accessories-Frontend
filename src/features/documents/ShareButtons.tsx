@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ApiError } from '@/types/api';
 import type { DocumentType, ShareLink } from './documentApi';
+import { SendMenu } from './SendMenu';
 
 export type { DocumentType } from './documentApi';
 
@@ -76,6 +77,9 @@ export function ShareButtons({
   const [error, setError] = useState<string | null>(null);
   const [typedNumber, setTypedNumber] = useState('');
   const [expiresAt, setExpiresAt] = useState<string | null>(null);
+  const [isChoosing, setIsChoosing] = useState(false);
+
+  const documentName = documentType === 'Invoice' ? 'invoice' : 'receipt';
 
   const storedNumber = customerMobile?.trim() ?? '';
   const hasStoredNumber = storedNumber.length > 0;
@@ -133,7 +137,9 @@ export function ShareButtons({
       }
 
       openUrl(url);
+      setIsChoosing(false);
     } catch (caught) {
+      // The panel stays open, so the shopkeeper can try again or pick the other app.
       report(caught, 'Could not create the share link. Please try again.');
     } finally {
       setIsWorking(false);
@@ -142,52 +148,75 @@ export function ShareButtons({
 
   return (
     <div className="share-buttons">
-      <button type="button" onClick={() => void handlePrint()} disabled={isWorking}>
+      <button
+        type="button"
+        className="share-buttons__print"
+        onClick={() => void handlePrint()}
+        disabled={isWorking}
+      >
         Print
       </button>
 
-      <button type="button" onClick={() => void handleDownload()} disabled={isWorking}>
+      <button
+        type="button"
+        className="share-buttons__download"
+        onClick={() => void handleDownload()}
+        disabled={isWorking}
+      >
         Download PDF
       </button>
 
-      {asksForNumber && (
-        <div className="field share-buttons__number">
-          <label htmlFor={`shareMobile-${referenceId}`}>Mobile number</label>
-          <input
-            id={`shareMobile-${referenceId}`}
-            inputMode="tel"
-            placeholder="03001234567"
-            value={typedNumber}
-            onChange={(event) => setTypedNumber(event.target.value)}
-          />
-          <small className="field__hint">Used for this message only — no customer is created.</small>
+      <SendMenu
+        label="Share"
+        kind="share"
+        prompt={`Please select an option to send the ${documentName}.`}
+        isOpen={isChoosing}
+        onOpenChange={setIsChoosing}
+        disabled={isWorking}
+      >
+        {asksForNumber && (
+          <div className="field share-buttons__number">
+            <label htmlFor={`shareMobile-${referenceId}`}>Mobile number</label>
+            <input
+              id={`shareMobile-${referenceId}`}
+              inputMode="tel"
+              placeholder="03001234567"
+              value={typedNumber}
+              onChange={(event) => setTypedNumber(event.target.value)}
+            />
+            <small className="field__hint">Used for this message only — no customer is created.</small>
+          </div>
+        )}
+
+        <div className="send-menu__options">
+          <button
+            type="button"
+            className="send-menu__whatsapp"
+            onClick={() => void send('whatsapp')}
+            disabled={isWorking || !canSend}
+            title={canSend ? undefined : 'No mobile number to send to'}
+          >
+            Send on WhatsApp
+          </button>
+
+          <button
+            type="button"
+            className="send-menu__sms"
+            onClick={() => void send('sms')}
+            disabled={isWorking || !canSend}
+            title={canSend ? undefined : 'No mobile number to send to'}
+          >
+            Send by SMS
+          </button>
         </div>
-      )}
 
-      <button
-        type="button"
-        onClick={() => void send('whatsapp')}
-        disabled={isWorking || !canSend}
-        title={canSend ? undefined : 'No mobile number to send to'}
-      >
-        Send on WhatsApp
-      </button>
-
-      <button
-        type="button"
-        onClick={() => void send('sms')}
-        disabled={isWorking || !canSend}
-        title={canSend ? undefined : 'No mobile number to send to'}
-      >
-        Send by SMS
-      </button>
-
-      {/* Only a customer ON FILE can have their record fixed; a walk-in never will. */}
-      {!hasStoredNumber && hasCustomer && (
-        <span className="share-buttons__hint">
-          Add a mobile number to this customer to send the receipt.
-        </span>
-      )}
+        {/* Only a customer ON FILE can have their record fixed; a walk-in never will. */}
+        {!hasStoredNumber && hasCustomer && (
+          <span className="share-buttons__hint">
+            Add a mobile number to this customer to send the {documentName}.
+          </span>
+        )}
+      </SendMenu>
 
       {expiresAt && (
         <small className="share-buttons__expiry" data-testid="share-expiry">

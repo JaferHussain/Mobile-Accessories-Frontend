@@ -33,6 +33,8 @@ export default defineConfig({
     globals: true,
     environment: 'jsdom',
     setupFiles: ['./tests/setup.ts'],
+    // Typing-heavy tests pass in well under a second alone, but can pass 5 s under full-suite load.
+    testTimeout: 15_000,
     include: ['tests/**/*.test.{ts,tsx}', 'src/**/*.test.{ts,tsx}'],
     coverage: {
       reporter: ['text', 'html'],

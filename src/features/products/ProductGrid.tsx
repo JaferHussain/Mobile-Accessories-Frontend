@@ -1,4 +1,5 @@
 import { LowStockBadge } from '@/components/LowStockBadge';
+import { StockCount } from '@/components/StockCount';
 import { formatPkr } from '@/lib/money';
 import { ProductPicture } from './ProductPicture';
 import type { Product } from './productApi';
@@ -6,6 +7,8 @@ import type { Product } from './productApi';
 export interface ProductGridProps {
   products: Product[];
   onOpen: (product: Product) => void;
+  /** The owner reads what the shop owns; everyone else what they can sell from. */
+  owned?: boolean;
 }
 
 /**
@@ -19,7 +22,7 @@ export interface ProductGridProps {
  * exists for, and it is also exactly the case where loading full-size photographs would stall
  * the screen.
  */
-export function ProductGrid({ products, onOpen }: ProductGridProps) {
+export function ProductGrid({ products, onOpen, owned = false }: ProductGridProps) {
   return (
     <ul className="product-grid" data-testid="product-grid">
       {products.map((product) => (
@@ -41,7 +44,7 @@ export function ProductGrid({ products, onOpen }: ProductGridProps) {
             <span className="product-card__price">{formatPkr(product.salePrice)}</span>
 
             <span className="product-card__stock">
-              {product.quantityOnHand}
+              <StockCount product={product} owned={owned} />
               <LowStockBadge
                 quantityOnHand={product.quantityOnHand}
                 minStockThreshold={product.minStockThreshold}

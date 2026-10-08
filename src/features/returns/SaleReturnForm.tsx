@@ -1,6 +1,9 @@
 import { useMemo, useState, type FormEvent } from 'react';
 import { formatPkr, roundMoney } from '@/lib/money';
 import { ApiError } from '@/types/api';
+import { PAYMENT_METHODS, type PaymentMethod } from '@/features/pos/posApi';
+import { ProofFileField } from '@/features/proofs/ProofFileField';
+import { needsProof } from '@/features/proofs/proofApi';
 
 export interface ReturnableLine {
   invoiceItemId: number;
@@ -26,8 +29,23 @@ export interface SaleReturnFormProps {
   /** What the customer still owes on this invoice, if anything. */
   amountRemaining: number;
   lines: ReturnableLine[];
-  onSubmit: (items: Array<{ invoiceItemId: number; quantity: number }>, reason: string | null) => Promise<void>;
+  /**
+   * `refundMethod` is null when nothing is refunded — the return only reduces what the customer
+   * owes. Whenever money goes back it is required: day close subtracts only cash refunds.
+   */
+  onSubmit: (
+    items: Array<{ invoiceItemId: number; quantity: number }>,
+    reason: string | null,
+    refundMethod: PaymentMethod | null,
+    /** A transfer refund's screenshot, chosen as the return is recorded. Null when none was. */
+    proofFile: File | null,
+  ) => Promise<void>;
 }
+
+/** The real ways to hand money back. Credit and Partial describe an unpaid sale. */
+const REFUND_METHODS = PAYMENT_METHODS.filter(
+  (method) => method.value !== 'Credit' && method.value !== 'Partial',
+);
 
 /**
  * Records goods coming back from a customer.
@@ -43,6 +61,9 @@ export function SaleReturnForm({
 }: SaleReturnFormProps) {
   const [quantities, setQuantities] = useState<Record<number, number>>({});
   const [reason, setReason] = useState('');
+  // Starts unanswered: assuming Cash showed every JazzCash refund as the drawer running over.
+  const [refundMethod, setRefundMethod] = useState<PaymentMethod | ''>('');
+  const [proofFile, setProofFile] = useState<File | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -99,10 +120,22 @@ export function SaleReturnForm({
       return;
     }
 
+    const refunds = totals.refundDue > 0;
+
+    if (refunds && refundMethod === '') {
+      setFormError('Say how the refund was handed back — cash, bank transfer, JazzCash…');
+      return;
+    }
+
     setIsSaving(true);
 
     try {
-      await onSubmit(items, reason.trim() || null);
+      await onSubmit(
+        items,
+        reason.trim() || null,
+        refunds ? (refundMethod as PaymentMethod) : null,
+        refunds && needsProof(refundMethod) ? proofFile : null,
+      );
     } catch (error) {
       setFormError(
         error instanceof ApiError ? error.message : 'Could not record the return. Please try again.',
@@ -221,9 +254,35 @@ export function SaleReturnForm({
       )}
 
       {totals.refundDue > 0 && (
-        <p className="return-form__notice" role="note">
-          This sale was already paid, so {formatPkr(totals.refundDue)} is owed back to the customer.
-        </p>
+        <>
+          <p className="return-form__notice" role="note">
+            This sale was already paid, so {formatPkr(totals.refundDue)} is owed back to the customer.
+          </p>
+
+          <div className="field">
+            <label htmlFor="refundMethod">Refunded by</label>
+            <select
+              id="refundMethod"
+              value={refundMethod}
+              onChange={(event) => setRefundMethod(event.target.value as PaymentMethod | '')}
+            >
+              <option value="" disabled>
+                Choose how it was handed back
+              </option>
+              {REFUND_METHODS.map((method) => (
+                <option key={method.value} value={method.value}>
+                  {method.label}
+                </option>
+              ))}
+            </select>
+            <small className="field__hint">
+              Only a cash refund is taken out of the drawer at day close. A transfer refund can
+              carry its screenshot as proof.
+            </small>
+          </div>
+
+          <ProofFileField id="refundProof" method={refundMethod} onFile={setProofFile} />
+        </>
       )}
 
       <div className="form-actions">

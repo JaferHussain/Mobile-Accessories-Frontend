@@ -22,6 +22,8 @@ export interface InvoiceListRow {
   /** Total less the value of any returns — what the sale is worth today. */
   netAmount: number;
   paymentMethod: string;
+  /** Whether a payment proof is attached. */
+  hasProof?: boolean;
 }
 
 export interface InvoiceSearch {

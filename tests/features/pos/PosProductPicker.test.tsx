@@ -74,6 +74,32 @@ function cartRows() {
 beforeEach(() => vi.clearAllMocks());
 
 describe('POS search results', () => {
+  it('tells the counter how many are on the shelf, and how many are out with the salesman', async () => {
+    const { onFindProduct } = renderPos();
+    vi.mocked(onFindProduct).mockResolvedValue({
+      kind: 'matches',
+      products: [{ ...cable, quantityOnHand: 12, atShop: 8, withSalesmen: 4, inYourBag: null }],
+    });
+
+    await searchFor('type-c');
+
+    const card = await screen.findByTestId('pos-result-1');
+    expect(within(card).getByTestId('stock-count')).toHaveTextContent('8 in shop · +4 with salesman');
+  });
+
+  it('tells the salesman in the market how many are in his own bag', async () => {
+    const { onFindProduct } = renderPos();
+    vi.mocked(onFindProduct).mockResolvedValue({
+      kind: 'matches',
+      products: [{ ...cable, quantityOnHand: 12, atShop: 8, withSalesmen: 4, inYourBag: 3 }],
+    });
+
+    await searchFor('type-c');
+
+    const card = await screen.findByTestId('pos-result-1');
+    expect(within(card).getByTestId('stock-count')).toHaveTextContent(/^3 with you$/);
+  });
+
   it('shows a card per match, and adds nothing on its own', async () => {
     const { onFindProduct } = renderPos();
 

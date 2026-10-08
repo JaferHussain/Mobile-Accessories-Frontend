@@ -18,9 +18,11 @@ import type { AuthUser } from '@/types/api';
 
 const admin: AuthUser = { id: 1, username: 'admin', fullName: 'Shop Owner', role: 'Admin' };
 const staff: AuthUser = { id: 2, username: 'salesman', fullName: 'Bilal', role: 'Staff' };
+const fieldSalesman: AuthUser = { id: 3, username: 'ali', fullName: 'Ali', role: 'Staff', job: 'FieldSales' };
 
 const ADMIN_ONLY_LINKS = [
-  'Purchases', 'Suppliers', 'Categories', 'Brands', 'Expenses', 'Reports', 'Dashboard', 'Admin',
+  'Purchases', 'Suppliers', 'Supplier ledger', 'Purchase return', 'Categories', 'Brands', 'Expenses', 'Reports',
+  'Dashboard', 'Admin', 'Proof missing', 'Shop accounts', 'Team', 'Udhaar customers',
 ];
 // Invoices is shared, not Admin-only: handing a customer their own receipt is counter work, and
 // the list carries no cost or profit. The server agrees — the endpoint is open to any signed-in
@@ -30,7 +32,10 @@ const ADMIN_ONLY_LINKS = [
 //
 // Products comes LAST for a salesman: the catalogue sits under Inventory, the final group they
 // can see. It used to sit second, under Sell.
-const SHARED_LINKS = ['New sale', 'Invoices', 'Customers', 'Returns', 'Products'];
+//
+// Sale return sits under Sell beside the counter, at the owner's request: taking goods back is
+// the other half of selling them. Purchase return went to Purchasing, so a salesman never sees it.
+const SHARED_LINKS = ['New sale', 'Sale return', 'Invoices', 'Customers', 'Recovery', 'Products'];
 
 /**
  * Opens every collapsed group.
@@ -132,6 +137,19 @@ describe('AppShell navigation', () => {
  * That happened twice (Invoices, Day close) before this test existed.</p>
  */
 describe('AppShell icons', () => {
+  it('gives the salesman in the market his own day first, and nobody else', () => {
+    renderShell(fieldSalesman);
+    expect(screen.getAllByRole('link').map((link) => link.textContent)).toEqual(['My day', ...SHARED_LINKS]);
+  });
+
+  it('gives My day an icon too', () => {
+    renderShell(fieldSalesman);
+    const css = readFileSync(resolve(process.cwd(), 'src/index.css'), 'utf8');
+
+    expect(css).toContain(`.shell__nav a[href='/my-day']::before`);
+    expect(screen.getByRole('link', { name: 'My day' })).toHaveAttribute('href', '/my-day');
+  });
+
   it('gives every navigation link an icon', () => {
     renderShell(admin);
 
@@ -201,13 +219,33 @@ describe('AppShell grouping', () => {
     expect(screen.queryByRole('link', { name: 'Suppliers' })).not.toBeInTheDocument();
   });
 
-  it('leaves the counter alone in the Sell group', () => {
+  it('keeps selling and taking back together under Sell', () => {
     renderCollapsed(admin);
 
-    // Sell is open by default and now holds exactly one thing, so the salesman's daily screen
-    // is the first link on the rail with nothing to scan past.
+    // The counter first, then its other half. Sell is open by default, so both are one click from
+    // anywhere; the catalogue and the supplier side stay out of it.
     expect(screen.getByRole('link', { name: 'New sale' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Sale return' })).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Products' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Purchase return' })).not.toBeInTheDocument();
+  });
+
+  it('puts purchase returns under Purchasing, with the goods they go back against', () => {
+    renderCollapsed(admin);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Purchasing' }));
+
+    expect(screen.getByRole('link', { name: 'Purchases' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Suppliers' })).toBeInTheDocument();
+    // The account behind "You owe": every purchase, return and payment with its running balance.
+    expect(screen.getByRole('link', { name: 'Supplier ledger' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Purchase return' })).toBeInTheDocument();
+  });
+
+  it('no longer offers one combined Returns screen', () => {
+    renderShell(admin);
+
+    expect(screen.queryByRole('link', { name: 'Returns' })).not.toBeInTheDocument();
   });
 
   it('leaves the Sell group open without being asked', () => {

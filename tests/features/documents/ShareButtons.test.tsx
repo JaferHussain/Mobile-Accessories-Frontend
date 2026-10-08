@@ -1,5 +1,7 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ShareButtons } from '@/features/documents/ShareButtons';
 import { ApiError } from '@/types/api';
@@ -19,7 +21,16 @@ const link = {
   expiresAtUtc: '2026-10-23T12:00:00Z',
 };
 
-function setup(overrides: Partial<Parameters<typeof ShareButtons>[0]> = {}) {
+/** Opens the choice of app behind the one Share button. */
+function openShare() {
+  fireEvent.click(screen.getByRole('button', { name: /^share$/i }));
+}
+
+/** Renders the buttons with the Share choice already open, as every send begins. */
+function setup(
+  overrides: Partial<Parameters<typeof ShareButtons>[0]> = {},
+  { open = true }: { open?: boolean } = {},
+) {
   const onFetchDocument = vi.fn().mockResolvedValue(new Blob(['%PDF'], { type: 'application/pdf' }));
   const onCreateShareLink = vi.fn().mockResolvedValue(link);
   const openUrl = vi.fn();
@@ -38,8 +49,68 @@ function setup(overrides: Partial<Parameters<typeof ShareButtons>[0]> = {}) {
     />,
   );
 
+  if (open) {
+    openShare();
+  }
+
   return { onFetchDocument, onCreateShareLink, openUrl, printUrl };
 }
+
+describe('the share row styling', () => {
+  it('styles its buttons by name, never by position', () => {
+    // Share sits inside its own wrapper, so `.share-buttons button:last-of-type` — the rule that
+    // once painted the WhatsApp button — now lands on Download PDF and dresses it as a chat app.
+    const css = readFileSync(resolve(process.cwd(), 'src/index.css'), 'utf8');
+
+    expect(css).not.toMatch(/\.share-buttons button:(first-child|last-of-type|nth-)/);
+    expect(css).toMatch(/\.share-buttons__print::before\s*\{\s*content:\s*'🖨 '/);
+  });
+});
+
+describe('the Share button', () => {
+  it('keeps both apps behind one Share button until it is pressed', () => {
+    setup({}, { open: false });
+
+    expect(screen.getByRole('button', { name: /^share$/i })).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByRole('button', { name: /whatsapp/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /sms/i })).not.toBeInTheDocument();
+  });
+
+  it('asks which app to send the invoice with', () => {
+    setup();
+
+    expect(screen.getByText('Please select an option to send the invoice.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /send on whatsapp/i })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /send by sms/i })).toBeEnabled();
+  });
+
+  it('calls a payment acknowledgement a receipt', () => {
+    setup({ documentType: 'PaymentReceipt', referenceId: 12 });
+
+    expect(screen.getByText('Please select an option to send the receipt.')).toBeInTheDocument();
+  });
+
+  it('closes on Escape, and on pressing Share again', () => {
+    setup();
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('button', { name: /whatsapp/i })).not.toBeInTheDocument();
+
+    openShare();
+    openShare();
+    expect(screen.queryByRole('button', { name: /whatsapp/i })).not.toBeInTheDocument();
+  });
+
+  it('closes once the message is on its way', async () => {
+    const user = userEvent.setup();
+    const { openUrl } = setup();
+
+    await user.click(screen.getByRole('button', { name: /whatsapp/i }));
+
+    await waitFor(() => expect(openUrl).toHaveBeenCalled());
+    expect(screen.queryByRole('button', { name: /whatsapp/i })).not.toBeInTheDocument();
+  });
+});
 
 describe('ShareButtons', () => {
   it('offers every way of handing over a bill', () => {

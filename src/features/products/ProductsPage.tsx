@@ -6,6 +6,7 @@ import { ProductForm } from './ProductForm';
 import { ProductGrid } from './ProductGrid';
 import { ProductDetail } from './ProductDetail';
 import { LowStockBadge } from '@/components/LowStockBadge';
+import { StockCount, sellableQuantity } from '@/components/StockCount';
 import { QueryState } from '@/components/QueryState';
 import { formatPkr } from '@/lib/money';
 import { useAuth } from '@/features/auth/AuthContext';
@@ -308,7 +309,7 @@ export function ProductsPage() {
         }
       >
         {view === 'grid' ? (
-          <ProductGrid products={data?.items ?? []} onOpen={setViewing} />
+          <ProductGrid products={data?.items ?? []} onOpen={setViewing} owned={isAdmin} />
         ) : (
         <table className="data-table">
           <caption className="visually-hidden">Products</caption>
@@ -344,7 +345,8 @@ export function ProductsPage() {
                   </td>
                 )}
                 <td className="numeric">
-                  {product.quantityOnHand}{' '}
+                  {/* The owner reads what the shop owns; everyone else what they can sell from. */}
+                  <StockCount product={product} owned={isAdmin} />{' '}
                   <LowStockBadge
                     quantityOnHand={product.quantityOnHand}
                     isLowStock={product.isLowStock}
@@ -355,7 +357,7 @@ export function ProductsPage() {
                       sale anyway, and saying so here saves a trip to the counter. */}
                   <button
                     type="button"
-                    disabled={product.quantityOnHand <= 0}
+                    disabled={sellableQuantity(product) <= 0}
                     aria-label={`Add ${product.name} to cart`}
                     onClick={() => void addToCart(product)}
                   >
@@ -389,6 +391,7 @@ export function ProductsPage() {
       {viewing && (
         <ProductDetail
           product={viewing}
+          owned={isAdmin}
           onClose={() => setViewing(null)}
           onSell={() =>
             navigate('/pos', {

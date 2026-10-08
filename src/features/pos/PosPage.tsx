@@ -20,7 +20,7 @@ import { ApiError } from '@/types/api';
  */
 export function PosPage() {
   // Only the owner may let goods leave against a debt (FR-051). The server enforces this too.
-  const { isAdmin } = useAuth();
+  const { isAdmin, user } = useAuth();
 
   // The Products screen's Sell button hands over what to look up via navigation state, so the
   // salesman does not have to type it again. Read once, at the price this history entry was
@@ -88,6 +88,10 @@ export function PosPage() {
       onCreateCustomer={createCustomer}
       onSearchCustomers={posApi.searchCustomers}
       canSellOnCredit={isAdmin}
+      // The salesman in the market may give udhaar — but only to the owner's udhaar customers.
+      udhaarCustomersOnly={user?.job === 'FieldSales'}
+      // The shopkeeper at the counter may take part payments — the owner's decision.
+      canTakePartPayment={!isAdmin && user?.job !== 'FieldSales'}
       initialTerm={prefillTerm}
       onUploadPaymentProof={posApi.uploadPaymentProof}
       onBrowseProducts={() => navigate('/products')}
