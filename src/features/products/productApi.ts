@@ -104,6 +104,14 @@ export const productApi = {
   },
 
   /**
+   * Deletes the product from the database for good. The server refuses (422) one with stock or
+   * any sales, purchase or stock history — that one is retired instead.
+   */
+  remove(id: number): Promise<void> {
+    return api.delete(`/products/${id}/permanent`).then(() => undefined);
+  },
+
+  /**
    * Attaches a picture to a product that already exists — the upload is addressed to its id,
    * so this always follows a create or update, never accompanies one. The server generates the
    * thumbnail and removes any previous picture.

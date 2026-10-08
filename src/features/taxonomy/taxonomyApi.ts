@@ -64,6 +64,11 @@ function moduleFor(resource: 'categories' | 'brands') {
     reactivate(id: number): Promise<void> {
       return api.post(`/${resource}/${id}/reactivate`).then(() => undefined);
     },
+
+    /** Deletes it from the database for good. The server refuses (422) one any product uses. */
+    remove(id: number): Promise<void> {
+      return api.delete(`/${resource}/${id}/permanent`).then(() => undefined);
+    },
   };
 }
 

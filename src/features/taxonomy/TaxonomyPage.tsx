@@ -36,7 +36,7 @@ export function TaxonomyPage({ resource, singular, plural }: TaxonomyPageProps) 
   const [description, setDescription] = useState('');
 
   const [formError, setFormError] = useState<string | null>(null);
-
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const { data, isPending, error } = useQuery({
     queryKey: [resource, search, showRetired],
@@ -74,6 +74,20 @@ export function TaxonomyPage({ resource, singular, plural }: TaxonomyPageProps) 
     mutationFn: ({ id, isActive }: { id: number; isActive: boolean }) =>
       isActive ? client.reactivate(id) : client.deactivate(id),
     onSuccess: refresh,
+  });
+
+  const remove = useMutation({
+    mutationFn: (id: number) => client.remove(id),
+    onMutate: () => setActionError(null),
+    onSuccess: refresh,
+    onError: (mutationError: unknown) => {
+      // The server refuses one any product still uses, and says so in words.
+      setActionError(
+        mutationError instanceof ApiError
+          ? mutationError.message
+          : `Could not delete the ${singular.toLowerCase()}. Please try again.`,
+      );
+    },
   });
 
   function resetForm() {
@@ -175,6 +189,12 @@ export function TaxonomyPage({ resource, singular, plural }: TaxonomyPageProps) 
         )}
       </div>
 
+      {actionError && (
+        <p className="form-error" role="alert">
+          {actionError}
+        </p>
+      )}
+
       <QueryState
         isLoading={isPending}
         error={error}
@@ -234,6 +254,21 @@ export function TaxonomyPage({ resource, singular, plural }: TaxonomyPageProps) 
                         onClick={() => setActive.mutate({ id: item.id, isActive: true })}
                       >
                         Restore
+                      </button>
+                    )}
+                    {/* Only offered when nothing is filed under it — one in use can only be
+                        retired, so its products keep their label. */}
+                    {item.productCount === 0 && (
+                      <button
+                        type="button"
+                        disabled={remove.isPending}
+                        onClick={() => {
+                          if (window.confirm(`Delete "${item.name}" permanently? This cannot be undone.`)) {
+                            remove.mutate(item.id);
+                          }
+                        }}
+                      >
+                        Delete
                       </button>
                     )}
                   </td>
