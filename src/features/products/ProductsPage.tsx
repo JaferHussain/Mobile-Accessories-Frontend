@@ -14,6 +14,7 @@ import { isTooShortSearch } from '@/lib/searchTerms';
 import { brandApi, categoryApi, type TaxonomyItem } from '@/features/taxonomy/taxonomyApi';
 import { useCart } from '@/features/pos/CartProvider';
 import { CartBadge } from '@/features/pos/CartBadge';
+import { ApiError } from '@/types/api';
 
 /** Active rows, A to Z (FR-085). The API already orders them; sorting here keeps the list stable. */
 function alphabetical(items: TaxonomyItem[] | undefined): TaxonomyItem[] {
@@ -169,6 +170,31 @@ export function ProductsPage() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['products'] }),
   });
 
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  const remove = useMutation({
+    mutationFn: (id: number) => productApi.remove(id),
+    onMutate: () => setDeleteError(null),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['products'] }),
+    onError: (mutationError: unknown) => {
+      // A product with stock or history is refused by the server, which says why.
+      setDeleteError(
+        mutationError instanceof ApiError
+          ? mutationError.message
+          : 'Could not delete the product. Please try again.',
+      );
+    },
+  });
+
+  function confirmDelete(product: Product) {
+    if (window.confirm(`Delete "${product.name}" permanently? This cannot be undone.`)) {
+      remove.mutate(product.id);
+      return true;
+    }
+
+    return false;
+  }
+
   if (isCreating || editing) {
     return (
       <ProductForm
@@ -229,6 +255,12 @@ export function ProductsPage() {
       {addError && (
         <p className="form-error" role="alert">
           {addError}
+        </p>
+      )}
+
+      {deleteError && (
+        <p className="form-error" role="alert">
+          {deleteError}
         </p>
       )}
 
@@ -379,6 +411,13 @@ export function ProductsPage() {
                     >
                       Retire
                     </button>
+                    <button
+                      type="button"
+                      disabled={remove.isPending}
+                      onClick={() => confirmDelete(product)}
+                    >
+                      Delete
+                    </button>
                   </td>
                 )}
               </tr>
@@ -413,6 +452,15 @@ export function ProductsPage() {
               ? () => {
                   if (window.confirm(`Retire "${viewing.name}"? Past invoices keep it.`)) {
                     deactivate.mutate(viewing.id);
+                    setViewing(null);
+                  }
+                }
+              : undefined
+          }
+          onDelete={
+            isAdmin
+              ? () => {
+                  if (confirmDelete(viewing)) {
                     setViewing(null);
                   }
                 }

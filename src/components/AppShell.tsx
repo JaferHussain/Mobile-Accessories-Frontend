@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '@/features/auth/AuthContext';
 
@@ -150,6 +150,19 @@ export function AppShell() {
   const toggle = (label: string) =>
     setOpen((current) => ({ ...current, [label]: !current[label] }));
 
+  // A group opened near the bottom of the rail (Settings, usually) would unfold below the fold.
+  // Bring the whole group into view once it has rendered — `nearest` leaves it alone when it
+  // already fits, so opening a group at the top never jolts the rail.
+  const groupRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const [justOpened, setJustOpened] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (justOpened) {
+      groupRefs.current[justOpened]?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' });
+      setJustOpened(null);
+    }
+  }, [justOpened]);
+
   return (
     <div className="shell">
       <header className="shell__header">
@@ -176,12 +189,23 @@ export function AppShell() {
         ))}
 
         {groups.map((group) => (
-          <div key={group.label} className="shell__group">
+          <div
+            key={group.label}
+            className="shell__group"
+            ref={(element) => {
+              groupRefs.current[group.label] = element;
+            }}
+          >
             <button
               type="button"
               className="shell__group-toggle"
               aria-expanded={open[group.label] ?? false}
-              onClick={() => toggle(group.label)}
+              onClick={() => {
+                if (!open[group.label]) {
+                  setJustOpened(group.label);
+                }
+                toggle(group.label);
+              }}
             >
               {group.label}
             </button>

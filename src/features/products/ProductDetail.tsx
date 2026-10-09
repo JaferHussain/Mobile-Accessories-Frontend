@@ -12,6 +12,8 @@ export interface ProductDetailProps {
   /** Present only for an Admin — matches the actions already offered from the table. */
   onEdit?: () => void;
   onRetire?: () => void;
+  /** Deletes it for good. The server refuses one with stock or history. */
+  onDelete?: () => void;
   /** The owner reads what the shop owns; everyone else what they can sell from. */
   owned?: boolean;
 }
@@ -28,7 +30,7 @@ export interface ProductDetailProps {
  * response carries no `retailPrice`, so it falls back to `salePrice`, the one price a
  * salesman is ever shown.
  */
-export function ProductDetail({ product, onClose, onSell, onEdit, onRetire, owned = false }: ProductDetailProps) {
+export function ProductDetail({ product, onClose, onSell, onEdit, onRetire, onDelete, owned = false }: ProductDetailProps) {
   const retailPrice = product.retailPrice ?? product.salePrice;
 
   return (
@@ -97,6 +99,11 @@ export function ProductDetail({ product, onClose, onSell, onEdit, onRetire, owne
         {onRetire && (
           <button type="button" onClick={onRetire}>
             Retire
+          </button>
+        )}
+        {onDelete && (
+          <button type="button" onClick={onDelete}>
+            Delete
           </button>
         )}
       </div>

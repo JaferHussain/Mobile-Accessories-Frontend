@@ -172,7 +172,37 @@ h3 { font-size: 1rem; margin: 1.75rem 0 0.5rem; }
      block of colour beside the white page. */
   background: linear-gradient(180deg, var(--rail) 0%, var(--rail-deep) 100%);
   border-bottom: none;
+
+  /* Pinned to the window and scrolled on its own. Without this the rail scrolled away with the
+     page, and with several groups open the last one (Settings) sat below the fold with no way
+     to reach it short of scrolling the whole page. */
+  position: sticky;
+  top: 0;
+  align-self: start;
+  height: 100vh;
+  height: 100dvh;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 2rem;
+  /* A slim scrollbar in the rail's own colours, rather than the system's grey slab. */
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
 }
+
+.shell__nav::-webkit-scrollbar { width: 6px; }
+.shell__nav::-webkit-scrollbar-track { background: transparent; }
+.shell__nav::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+}
+.shell__nav::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.32); }
+
+/* In a scrolling flex column every child must keep its height — otherwise the browser squeezes
+   links and headings to fit instead of letting the rail scroll. */
+.shell__nav > * { flex-shrink: 0; }
 
 /* The shop mark, drawn rather than imported so there is no asset to ship. */
 .shell__nav::before {
@@ -315,6 +345,52 @@ h3 { font-size: 1rem; margin: 1.75rem 0 0.5rem; }
 
 .login-form button:hover:not(:disabled) { background: var(--blue-deep); }
 .login-form button:disabled { opacity: 0.65; cursor: not-allowed; }
+
+/* Password input with a show/hide eye inside its right edge. */
+.password-field { position: relative; display: flex; }
+.password-field input { flex: 1; min-width: 0; padding-right: 2.6rem; }
+
+.login-form .password-field__toggle {
+  position: absolute;
+  top: 50%;
+  right: 0.35rem;
+  transform: translateY(-50%);
+  margin: 0;
+  padding: 0.3rem;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  color: var(--ink-muted);
+  border: none;
+  border-radius: 999px;
+  cursor: pointer;
+  transition:
+    background-color 180ms ease,
+    color 180ms ease,
+    transform 120ms ease;
+}
+
+.login-form .password-field__toggle:hover:not(:disabled) { background: var(--surface-alt); color: var(--ink); }
+.login-form .password-field__toggle:active { transform: translateY(-50%) scale(0.9); }
+.login-form .password-field__toggle:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
+.login-form .password-field__toggle.is-shown { color: var(--blue); }
+
+/* Both icons share one cell; the hidden one fades and shrinks out while the
+   other fades and grows in, so the swap reads as one motion, not a flicker. */
+.password-field__icon {
+  grid-area: 1 / 1;
+  transition:
+    opacity 220ms ease,
+    transform 260ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.password-field__icon--eye-off { opacity: 0; transform: scale(0.6) rotate(-45deg); }
+.is-shown .password-field__icon--eye { opacity: 0; transform: scale(0.6) rotate(45deg); }
+.is-shown .password-field__icon--eye-off { opacity: 1; transform: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .login-form .password-field__toggle,
+  .password-field__icon { transition: none; }
+}
 
 .login-form__error {
   margin: 0.75rem 0 0;
@@ -1330,7 +1406,8 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
 
 @media (max-width: 780px) {
   .shell { grid-template-columns: 1fr; grid-template-areas: 'header' 'nav' 'main'; }
-  .shell__nav { flex-direction: row; flex-wrap: wrap; padding: 0.5rem; }
+  /* On a phone the rail is a strip above the page, so it scrolls with it rather than pinning. */
+  .shell__nav { flex-direction: row; flex-wrap: wrap; padding: 0.5rem; position: static; height: auto; overflow: visible; }
   .shell__nav::before { display: none; }
   .shell__nav a { font-size: 0.8rem; padding: 0.5rem 0.7rem; gap: 0.4rem; }
   .shell__header { height: auto; padding: 0.85rem 1rem; flex-direction: column; align-items: flex-start; gap: 0.5rem; }
@@ -1945,6 +2022,13 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
   margin-left: 0.6rem;
   padding-left: 0.4rem;
   border-left: 1px solid rgba(255, 255, 255, 0.12);
+  /* A group unfolds rather than snapping open. */
+  animation: shell-group-open 0.18s ease-out;
+}
+
+@keyframes shell-group-open {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
 /* =============================================================================
