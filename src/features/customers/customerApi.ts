@@ -101,6 +101,21 @@ export const customerApi = {
     );
   },
 
+  /**
+   * Sets whether a customer is retail or wholesale — the owner's. The update endpoint replaces the
+   * contact details too, so they are sent back exactly as they stand.
+   */
+  setSaleType(customer: Customer, saleType: Customer['saleType']): Promise<Customer> {
+    return unwrap(
+      api.put<ApiEnvelope<Customer>>(`/customers/${customer.id}`, {
+        name: customer.name,
+        mobileNumber: customer.mobileNumber ?? null,
+        address: customer.address ?? null,
+        saleType,
+      }),
+    );
+  },
+
   search(params: {
     search?: string;
     withBalanceOnly?: boolean;

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { QueryState } from '@/components/QueryState';
 import { formatPkr } from '@/lib/money';
@@ -8,6 +9,7 @@ import { salesmanCashApi } from '@/features/salesmanCash/salesmanCashApi';
 import { salesmanStockApi } from '@/features/salesmanStock/salesmanStockApi';
 import { formatTime } from '@/features/team/TeamPage';
 import { KIND_LABELS, detailsFor } from '@/features/team/TeamMemberPage';
+import { recoveryApi } from '@/features/recovery/recoveryApi';
 import { myDayApi } from './myDayApi';
 import { shopMonthStart, shopToday } from '@/lib/shopDay';
 
@@ -18,8 +20,10 @@ type Period = 'today' | 'month';
  * commission he has earned.
  *
  * <p>Always his own figures — the server answers for the signed-in person and takes no user id.
- * Cash and commission belong to the market salesman only, so the counter shopkeeper sees just his
- * sales. Every figure is the server's; nothing is worked out here.</p>
+ * Cash and commission belong to the market salesman only. The counter shopkeeper sees his sales,
+ * what he took back and the discounts he gave, and who owes the shop so he can chase them. No
+ * cost and no profit reaches this screen. Every figure is the server's; nothing is worked out
+ * here.</p>
  */
 export function MyDayPage() {
   const { user } = useAuth();
@@ -38,6 +42,9 @@ export function MyDayPage() {
   const cash = useQuery({ queryKey: ['my-cash'], queryFn: () => salesmanCashApi.mine(), enabled: inField });
   const commission = useQuery({ queryKey: ['my-commission'], queryFn: () => commissionApi.mine(), enabled: inField });
   const stock = useQuery({ queryKey: ['my-stock'], queryFn: () => salesmanStockApi.mine(), enabled: inField });
+
+  // The counter chases money: who owes, most overdue first. The salesman has his own round.
+  const owing = useQuery({ queryKey: ['recovery'], queryFn: () => recoveryApi.report(), enabled: !inField });
 
   const card = day.data?.card;
 
@@ -79,6 +86,9 @@ export function MyDayPage() {
 
                 <dt>Udhaar collected</dt>
                 <dd data-testid="my-udhaar-collected">{formatPkr(card.udhaarCollected)}</dd>
+
+                <dt>Discounts given</dt>
+                <dd data-testid="my-discounts">{formatPkr(card.discountGiven)}</dd>
 
                 <dt>Returns</dt>
                 <dd>
@@ -172,6 +182,34 @@ export function MyDayPage() {
                 </tbody>
               </table>
             )}
+          </QueryState>
+        </section>
+      )}
+
+      {!inField && (
+        <section className="my-day__chase" aria-labelledby="my-chase-heading">
+          <h3 id="my-chase-heading">Customers to chase</h3>
+          <QueryState
+            isLoading={owing.isPending}
+            error={owing.error}
+            isEmpty={owing.data?.accounts.length === 0}
+            emptyMessage="Nobody owes the shop anything."
+          >
+            <ul className="lens-timeline" data-testid="my-chase">
+              {owing.data?.accounts.slice(0, 5).map((account) => (
+                <li key={account.customerId}>
+                  <span>
+                    {account.name}
+                    {account.monthsOverdue > 0 && (
+                      <small> · {account.monthsOverdue} month{account.monthsOverdue === 1 ? '' : 's'} overdue</small>
+                    )}
+                  </span>
+                  <span />
+                  <span className="numeric">{formatPkr(account.outstanding)}</span>
+                </li>
+              ))}
+            </ul>
+            <Link to="/recovery">Open Recovery →</Link>
           </QueryState>
         </section>
       )}

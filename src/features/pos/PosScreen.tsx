@@ -126,6 +126,9 @@ export function PosScreen({
   const [isRepricing, setIsRepricing] = useState(false);
   const [lookupError, setLookupError] = useState<string | null>(null);
   const [results, setResults] = useState<Product[]>([]);
+  // The search behind the cards on screen — re-run when the sale type changes, so a card never
+  // offers a product at the rate of the other sale type.
+  const [resultsQuery, setResultsQuery] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [receipt, setReceipt] = useState<CreateInvoiceResult | null>(null);
   const [proofState, setProofState] = useState<'idle' | 'sending' | 'done' | 'failed'>('idle');
@@ -233,6 +236,7 @@ export function PosScreen({
       // thing matching what I typed" is not the same as "the thing in the customer's hand",
       // and an unnoticed wrong line is found later at the till, or not at all.
       setResults(found.products);
+      setResultsQuery(query);
     } catch (error) {
       setLookupError(
         error instanceof ApiError ? error.message : 'Could not search for that product.',
@@ -261,6 +265,18 @@ export function PosScreen({
   async function changeSaleType(next: SaleType) {
     setSaleType(next);
     await repriceAll(next);
+
+    // The cards on screen were priced for the sale type being left. Switching to Wholesale and
+    // pressing Add on a card fetched at retail used to put the item in at the RETAIL price — the
+    // owner's "wholesale selected, but no wholesale price". Re-read them at the new rate.
+    if (results.length > 0 && resultsQuery) {
+      try {
+        const found = await onFindProduct(resultsQuery, next);
+        setResults(found.kind === 'matches' ? found.products : []);
+      } catch {
+        setResults([]);
+      }
+    }
   }
 
   /**
@@ -533,6 +549,12 @@ export function PosScreen({
               {/* Priced for the sale type chosen at the top — a wholesale sale quotes the
                   wholesale price, resolved by the server, not worked out here. */}
               <span className="pos__result-price">{formatPkr(product.salePrice)}</span>
+
+              {/* Said, never silent: a wholesale sale of a product with no wholesale price set is
+                  charged the retail price, and the screen must not look like it ignored the choice. */}
+              {product.quotedAtRetail && (
+                <span className="badge badge--low pos__result-fallback">No wholesale price — retail rate</span>
+              )}
 
               {/* The number this seller can sell from: the shelf at the counter, his own bag in the market. */}
               <span className="pos__result-stock">

@@ -193,6 +193,48 @@ describe('customer returns', () => {
     expect(within(row).getByText('INV-0077')).toBeInTheDocument();
   });
 
+  it('names who brought each return back and whether it was retail or wholesale', async () => {
+    const base = {
+      returnDateUtc: new Date().toISOString(),
+      quantity: 1,
+      billedTotal: 500,
+      discountTotal: 0,
+      lineTotal: 500,
+      refundDue: 0,
+      refundMethod: null,
+      hasRefundProof: false,
+      reason: null,
+    };
+
+    vi.mocked(returnApi.listSaleReturns).mockResolvedValue(
+      page([
+        { ...base, returnId: 1, returnNumber: 'SRT-1', invoiceId: 1, invoiceNumber: 'INV-1', productName: 'Cable', customerName: 'Ikram', saleType: 'Wholesale' },
+        { ...base, returnId: 2, returnNumber: 'SRT-2', invoiceId: 2, invoiceNumber: 'INV-2', productName: 'Charger', customerName: null, saleType: 'Retail' },
+      ] as never),
+    );
+
+    renderPage();
+
+    const wholesale = (await screen.findByText('Cable')).closest('tr')!;
+    const walkIn = screen.getByText('Charger').closest('tr')!;
+
+    expect(within(wholesale).getByText('Ikram')).toBeInTheDocument();
+    expect(within(wholesale).getByText('Wholesale')).toBeInTheDocument();
+    // A sale with no stored customer is a walk-in, not a blank.
+    expect(within(walkIn).getByText('Walk-in')).toBeInTheDocument();
+    expect(within(walkIn).getByText('Retail')).toBeInTheDocument();
+  });
+
+  it('asks the server for only wholesale returns when Wholesale is chosen', async () => {
+    renderPage();
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Wholesale' }));
+
+    await waitFor(() =>
+      expect(returnApi.listSaleReturns).toHaveBeenLastCalledWith({ saleType: 'Wholesale', search: undefined }),
+    );
+  });
+
   it('finds a sale by product name and returns it, naming the exact product and new stock', async () => {
     vi.mocked(returnApi.findReturnableLines).mockResolvedValue([
       {
@@ -237,7 +279,7 @@ describe('customer returns', () => {
     await userEvent.click(screen.getByRole('button', { name: /record return/i }));
 
     expect(returnApi.recordSaleReturn).toHaveBeenCalledWith(
-      77, [{ invoiceItemId: 5, quantity: 1 }], null, 'Cash',
+      77, [{ invoiceItemId: 5, quantity: 1 }], null, 'Cash', null,
     );
 
     // The popup names the exact product and confirms the stock it left behind.

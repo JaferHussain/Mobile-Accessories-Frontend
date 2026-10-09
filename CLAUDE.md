@@ -58,6 +58,10 @@ cd ../backend && dotnet test            # and so must the backend
   appear only for a transfer method. Keep **Raast** in `PAYMENT_METHODS`. `handleConfirm`
   re-throws so a refused sale keeps the modal open with the cart intact.
 - **Saving clears the cart but keeps the receipt**, until **New sale** is pressed.
+- **Switching the sale type re-reads the cards on screen** (`changeSaleType` re-runs the search
+  behind them), not only the cart. Pressing Add on a card fetched before the switch put the item in
+  at the OTHER rate — the owner's "wholesale selected, but no wholesale price". A card whose
+  wholesale quote fell back to retail (`quotedAtRetail`) says **No wholesale price — retail rate**.
 
 ## Handing a customer their bill
 
@@ -89,6 +93,8 @@ cd ../backend && dotnet test            # and so must the backend
 - **Test the attach through the real `proofApi` object** (`vi.spyOn(proofApi, 'attach')`). Mocking
   the module's export replaces only the import; the shared helper inside the module still calls the
   original, so the mock never sees the upload.
+- **A transfer refund asks for the customer's account number and transaction ID** as soon as a
+  transfer is chosen (`SaleReturnForm`, both optional; never for cash), and the return history shows them.
 - **Refunded by** (sale return) and **Paid by** (bank expense) start unanswered, like Paid from:
   a default would put transfer money into the day-close drawer count.
 - **View opens a blob, never a URL to the file** — proofs are only reachable through the signed-in
@@ -116,6 +122,22 @@ cd ../backend && dotnet test            # and so must the backend
   `testTimeout: 15_000`. Typing-heavy tests pass in well under a second alone but failed at random
   under full-suite load with the 1 s / 5 s defaults. More time changes no assertion.
 
+## The dashboard (`/dashboard`, Admin only)
+
+- **One layout, scoped by chips** (`DashboardPage` → `LensChips`): **Everyone**, a chip per person,
+  and **Money**. Each chip counts what is worth a look. What is worth a look (`AttentionStrip`) comes
+  BEFORE the figures. Built entirely from endpoints that already existed — `/dashboard` (shop totals,
+  shown unchanged by `Dashboard` with `showHeader={false}`), `/team` + `/team/watchlist` (people),
+  and for Money the day-close preview, expenses, suppliers and receivables. **The page works out no
+  figure of its own.**
+- **Money** (`MoneyView`) is the drawer via `dayCloseApi.preview(today, 0)` — the same calculation
+  day close uses, so the two never disagree; opening cash is left out (added when counted).
+- **A person's view carries no cost or profit** — `/team` does not return any. The shop-wide
+  Gross/Net profit stays on Everyone only. A test asserts a person's view says nothing of profit.
+- The period maps to shop days in `periodRange` (`dashboardRange.ts`, Asia/Karachi — never
+  `toISOString`, see Traps).
+- `/team` still exists and is unchanged; the dashboard is its front door, not a replacement.
+
 ## Commission
 
 - **Commission** (`/commissions/:userId`, Admin): earned / waiting for udhaar / paid / owed, each
@@ -141,12 +163,14 @@ cd ../backend && dotnet test            # and so must the backend
   a product, Add, set how many, note), and every movement. My day shows **My stock**. Issued goods
   are still the shop's — the server refuses the counter selling them and the salesman selling what
   he was not issued; the screens only word the refusal.
-- **My day** (`/my-day`, first in the rail for `job === 'FieldSales'` only — `fieldSalesOnly` on the
-  nav item): My sales for Today / This month, and for the field salesman My cash and My commission
-  (all-time — what he holds and is owed now), then what he did. Phone-first: one column under
-  640px. Built on `/my-day`, `/salesman-cash/me` and `/commissions/me`; the latter two are never
-  requested for the counter shopkeeper. The counter's rail is unchanged, and `/` still lands on the
-  counter for everyone.
+- **My day** (`/my-day`, first in the rail for every member of STAFF — `staffOnly` on the nav item;
+  the owner has the Dashboard instead): My sales for Today / This month (with discounts given), and
+  for the field salesman My cash and My commission (all-time — what he holds and is owed now), then
+  what he did. The **counter shopkeeper** gets **Customers to chase** (top 5 of `/recovery`, most
+  overdue first) in place of the market panels. No cost, no profit, nobody else's figures. Phone-first:
+  one column under 640px. Built on `/my-day`, `/salesman-cash/me` and `/commissions/me`; the latter
+  two, and the stock list, are never requested for the counter shopkeeper, and `/recovery` is never
+  requested for the salesman. `/` still lands on the counter for everyone.
 
 ## Stock figures — each person reads what they can sell from
 
@@ -158,6 +182,8 @@ the owned total on purpose — a purchase re-costs every owned unit, and reports
 owns.
 
 ## Udhaar customers
+- **Customer type** (`CustomerTypeToggle`, owner only, on a customer's page): Retail / Wholesale —
+  what the Customers screen's Wholesale filter reads. A wholesale sale sets it on its own (server).
 
 - **Udhaar customers** (`/udhaar-customers`, owner only, under Customers & bills): search, what each
   owes, ID card **On file** / **ID card missing**, View ID card, Complete ID card, Remove.

@@ -27,12 +27,20 @@ export interface PurchaseForReturn {
   unitCost: number;
 }
 
+/** Which kind of sale the goods came back from. */
+export type ReturnSaleType = 'Retail' | 'Wholesale';
+
 export interface SaleReturnRow {
   returnId: number;
   returnNumber: string;
   returnDateUtc: string;
   invoiceId: number;
   invoiceNumber: string;
+  /** Null for a walk-in sale — nobody was stored. */
+  customerId?: number | null;
+  customerName?: string | null;
+  /** Read from the invoice the goods were sold on. */
+  saleType?: ReturnSaleType;
   productName: string;
   quantity: number;
   /** What the goods were billed at. */
@@ -44,6 +52,9 @@ export interface SaleReturnRow {
   refundDue: number;
   /** How the refund was handed back. Null when nothing was refunded. */
   refundMethod: PaymentMethod | null;
+  /** The customer's account a transfer refund went to, and its transaction. */
+  refundAccountNumber?: string | null;
+  refundTransactionId?: string | null;
   hasRefundProof: boolean;
   reason: string | null;
 }
@@ -69,6 +80,9 @@ export interface PurchaseReturnRow {
 export interface ReturnableLine {
   invoiceId: number;
   invoiceNumber: string;
+  /** Null for a walk-in sale. */
+  customerName?: string | null;
+  saleType?: ReturnSaleType;
   invoiceItemId: number;
   productName: string;
   /** How many were sold on this line. */
@@ -134,17 +148,33 @@ export const returnApi = {
     items: Array<{ invoiceItemId: number; quantity: number }>,
     reason: string | null,
     refundMethod: PaymentMethod | null = null,
+    /** Where a transfer refund went. Null for cash, which carries neither. */
+    reference: { accountNumber: string | null; transactionId: string | null } | null = null,
   ): Promise<SaleReturnResult> {
     return unwrap(
-      api.post<ApiEnvelope<SaleReturnResult>>('/sale-returns', { invoiceId, items, reason, refundMethod }),
+      api.post<ApiEnvelope<SaleReturnResult>>('/sale-returns', {
+        invoiceId,
+        items,
+        reason,
+        refundMethod,
+        refundAccountNumber: reference?.accountNumber ?? null,
+        refundTransactionId: reference?.transactionId ?? null,
+      }),
     );
   },
 
   /** The general/detail history of customer returns — product, quantity, value, refund. */
-  listSaleReturns(): Promise<PagedResult<SaleReturnRow>> {
+  listSaleReturns(
+    filter: { saleType?: ReturnSaleType; search?: string; customerId?: number } = {},
+  ): Promise<PagedResult<SaleReturnRow>> {
     return unwrap(
       api.get<ApiEnvelope<PagedResult<SaleReturnRow>>>('/sale-returns', {
-        params: { pageSize: 50 },
+        params: {
+          pageSize: 50,
+          saleType: filter.saleType,
+          search: filter.search || undefined,
+          customerId: filter.customerId,
+        },
       }),
     );
   },

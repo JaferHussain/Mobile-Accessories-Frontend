@@ -8,6 +8,8 @@ import { ReceivePaymentModal } from './ReceivePaymentModal';
 import { attachProofAfterSave, proofOutcomeText, type ProofOutcome } from '@/features/proofs/proofApi';
 import { OpeningBalanceForm } from './OpeningBalanceForm';
 import { UdhaarStatusPanel } from '@/features/udhaar/UdhaarStatusPanel';
+import { CustomerTypeToggle } from './CustomerTypeToggle';
+import { CustomerReturnsPanel } from './CustomerReturnsPanel';
 import { useAuth } from '@/features/auth/AuthContext';
 import { QueryState } from '@/components/QueryState';
 import { formatPkr } from '@/lib/money';
@@ -117,8 +119,13 @@ function CustomerDetail({ customer, onBack }: { customer: Customer; onBack: () =
         )}
       </QueryState>
 
+      <CustomerReturnsPanel customerId={customer.id} />
+
       {/* Make udhaar customer / the badge and ID card — the owner's only. */}
       {isAdmin && <UdhaarStatusPanel key={shown.id} customerId={shown.id} />}
+
+      {/* Retail or wholesale — what the Wholesale filter reads. The owner's; a wholesale sale also sets it. */}
+      {isAdmin && <CustomerTypeToggle key={`type-${shown.id}-${shown.saleType}`} customer={shown} />}
 
       {isAdmin && !isSettingOpening && (
         <button type="button" onClick={() => setIsSettingOpening(true)}>
@@ -250,7 +257,11 @@ export function CustomersPage() {
         isLoading={isPending}
         error={error}
         isEmpty={data?.items.length === 0}
-        emptyMessage="No customers match that search."
+        emptyMessage={
+          saleTypeFilter === 'Retail'
+            ? 'No customers match that search. Retail walk-in sales paid in full are not stored as customers — see Reports → Retail vs wholesale for those.'
+            : 'No customers match that search.'
+        }
       >
         <table className="data-table">
           <caption className="visually-hidden">Customers</caption>

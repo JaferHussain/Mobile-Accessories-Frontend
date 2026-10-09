@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { SaleReturnForm } from './SaleReturnForm';
 import { PurchaseReturnForm } from './PurchaseReturnForm';
-import { returnApi, type ReturnableLine } from './returnApi';
+import { returnApi, type ReturnableLine, type ReturnSaleType } from './returnApi';
+import { returnCustomerLabel } from './returnLabels';
 import { purchaseApi, supplierApi, type Purchase } from '@/features/suppliers/supplierApi';
 import { formatPkr } from '@/lib/money';
 import { QueryState } from '@/components/QueryState';
@@ -42,9 +43,17 @@ function CustomerReturns() {
   const [searchError, setSearchError] = useState<string | null>(null);
   const [isSearching, setIsSearching] = useState(false);
 
+  // Narrow the history to one kind of sale, or to one customer — "who is bringing goods back".
+  const [typeFilter, setTypeFilter] = useState<'All' | ReturnSaleType>('All');
+  const [historySearch, setHistorySearch] = useState('');
+
   const history = useQuery({
-    queryKey: ['sale-returns'],
-    queryFn: () => returnApi.listSaleReturns(),
+    queryKey: ['sale-returns', typeFilter, historySearch],
+    queryFn: () =>
+      returnApi.listSaleReturns({
+        saleType: typeFilter === 'All' ? undefined : typeFilter,
+        search: historySearch.trim() || undefined,
+      }),
   });
 
   async function search() {
@@ -101,8 +110,8 @@ function CustomerReturns() {
               discountPerUnit: invoice.discountPerUnit,
             },
           ]}
-          onSubmit={async (items, reason, refundMethod, proofFile) => {
-            const result = await returnApi.recordSaleReturn(invoice.invoiceId, items, reason, refundMethod);
+          onSubmit={async (items, reason, refundMethod, proofFile, reference) => {
+            const result = await returnApi.recordSaleReturn(invoice.invoiceId, items, reason, refundMethod, reference);
             const proof = await attachProofAfterSave('refund', result.returnId, proofFile, refundMethod);
 
             // Names the exact product and its updated stock — "it worked" is not enough; the
@@ -119,7 +128,8 @@ function CustomerReturns() {
                 : '';
 
             setConfirmation(
-              `Recorded ${result.returnNumber}. ${stockLine} — returned ` +
+              `Recorded ${result.returnNumber} from ${returnCustomerLabel(invoice.customerName)}` +
+                `${invoice.saleType ? ` (${invoice.saleType})` : ''}. ${stockLine} — returned ` +
                 `${formatPkr(result.totalReturned)}${adjustment}` +
                 (result.refundDue > 0 ? `, refund owed ${formatPkr(result.refundDue)}.` : '.') +
                 proofOutcomeText(proof),
@@ -179,7 +189,8 @@ function CustomerReturns() {
                 {/* The amount comes with the item, before anyone opens the return: it is what
                     a unit is worth BACK, after the discount, not the price on the receipt. */}
                 <span className="pick-list__meta">
-                  {line.invoiceNumber} · {line.quantityAvailable} available ·{' '}
+                  {line.invoiceNumber} · {returnCustomerLabel(line.customerName)}
+                  {line.saleType && ` (${line.saleType})`} · {line.quantityAvailable} available ·{' '}
                   {formatPkr(line.refundPerUnit)} each
                   {line.discountPerUnit > 0 && ` (${formatPkr(line.discountPerUnit)} discount)`} ·{' '}
                   up to {formatPkr(line.maxRefund)}
@@ -191,6 +202,31 @@ function CustomerReturns() {
       )}
 
       <h3>Recent returns</h3>
+
+      <div className="filters">
+        <div className="field">
+          <label htmlFor="returnHistorySearch">Find a return</label>
+          <input
+            id="returnHistorySearch"
+            value={historySearch}
+            placeholder="Customer, mobile, invoice or product"
+            onChange={(event) => setHistorySearch(event.target.value)}
+          />
+        </div>
+
+        <div className="view-toggle" role="group" aria-label="Sale type">
+          {(['All', 'Retail', 'Wholesale'] as const).map((option) => (
+            <button
+              key={option}
+              type="button"
+              aria-pressed={typeFilter === option}
+              onClick={() => setTypeFilter(option)}
+            >
+              {option}
+            </button>
+          ))}
+        </div>
+      </div>
 
       <QueryState
         isLoading={history.isPending}
@@ -206,6 +242,8 @@ function CustomerReturns() {
             <tr>
               <th scope="col">Date</th>
               <th scope="col">Invoice</th>
+              <th scope="col">Customer</th>
+              <th scope="col">Type</th>
               <th scope="col">Product</th>
               <th scope="col">Qty</th>
               <th scope="col">Item value</th>
@@ -221,6 +259,8 @@ function CustomerReturns() {
               <tr key={row.returnId}>
                 <td>{new Date(row.returnDateUtc).toLocaleDateString('en-PK')}</td>
                 <td>{row.invoiceNumber}</td>
+                <td>{returnCustomerLabel(row.customerName)}</td>
+                <td>{row.saleType ?? '—'}</td>
                 <td>{row.productName}</td>
                 <td className="numeric">{row.quantity}</td>
                 <td className="numeric">{formatPkr(row.billedTotal)}</td>
@@ -231,7 +271,12 @@ function CustomerReturns() {
                 <td className="numeric">
                   {row.refundDue > 0 ? formatPkr(row.refundDue) : '—'}
                   {row.refundMethod && (
-                    <small className="field__hint"> {methodLabel(row.refundMethod)}</small>
+                    <small className="field__hint">
+                      {' '}
+                      {methodLabel(row.refundMethod)}
+                      {row.refundAccountNumber && ` · to ${row.refundAccountNumber}`}
+                      {row.refundTransactionId && ` · ${row.refundTransactionId}`}
+                    </small>
                   )}
                 </td>
                 <td>{row.reason ?? '—'}</td>

@@ -15,3 +15,8 @@ export function shopToday(): string {
 export function shopMonthStart(): string {
   return `${shopToday().slice(0, 8)}01`;
 }
+
+/** The first day of the shop's current year. Never after {@link shopToday}. */
+export function shopYearStart(): string {
+  return `${shopToday().slice(0, 5)}01-01`;
+}

@@ -112,7 +112,8 @@ describe('AppShell navigation', () => {
       .getAllByRole('link')
       .map((link) => link.textContent);
 
-    expect(labels).toEqual(SHARED_LINKS);
+    // Their own day first, then the work they share — never the owner's Dashboard or Team.
+    expect(labels).toEqual(['My day', ...SHARED_LINKS]);
   });
 
   it('offers a way to sign out', () => {
@@ -137,9 +138,15 @@ describe('AppShell navigation', () => {
  * That happened twice (Invoices, Day close) before this test existed.</p>
  */
 describe('AppShell icons', () => {
-  it('gives the salesman in the market his own day first, and nobody else', () => {
+  it('gives every member of staff their own day first, and the owner none', () => {
     renderShell(fieldSalesman);
     expect(screen.getAllByRole('link').map((link) => link.textContent)).toEqual(['My day', ...SHARED_LINKS]);
+  });
+
+  it('does not give the owner a My day — the Dashboard is theirs', () => {
+    renderShell(admin);
+
+    expect(screen.queryByRole('link', { name: 'My day' })).not.toBeInTheDocument();
   });
 
   it('gives My day an icon too', () => {

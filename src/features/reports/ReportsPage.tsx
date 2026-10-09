@@ -9,6 +9,7 @@ import {
   type ReceivableRow,
   type ReportGrouping,
   type SaleListRow,
+  type SaleTypeReturns,
   type SaleTypeTotals,
   type StockMovementRow,
   type StockRow,
@@ -21,6 +22,7 @@ import { shopMonthStart, shopToday } from '@/lib/shopDay';
 
 type ReportName =
   | 'sales-by-type'
+  | 'returns-by-type'
   | 'sales-by-user'
   | 'profit'
   | 'profit-by-product'
@@ -32,6 +34,7 @@ type ReportName =
 
 const REPORTS: ReadonlyArray<{ value: ReportName; label: string }> = [
   { value: 'sales-by-type', label: 'Retail vs wholesale' },
+  { value: 'returns-by-type', label: 'Returns: retail vs wholesale' },
   { value: 'sales-by-user', label: 'Salesmen' },
   { value: 'profit', label: 'Sales & profit' },
   { value: 'profit-by-product', label: 'Profit by product' },
@@ -45,6 +48,7 @@ const REPORTS: ReadonlyArray<{ value: ReportName; label: string }> = [
 /** Reports that read a date range; the rest are a snapshot of right now. */
 const RANGED: ReadonlySet<ReportName> = new Set([
   'sales-by-type',
+  'returns-by-type',
   'sales-by-user',
   'profit',
   'profit-by-product',
@@ -80,6 +84,12 @@ export function ReportsPage() {
     queryKey: ['report', 'sales-by-type', from, to],
     queryFn: () => reportApi.salesByType(from, to),
     enabled: ready('sales-by-type'),
+  });
+
+  const returnsByType = useQuery({
+    queryKey: ['report', 'returns-by-type', from, to],
+    queryFn: () => reportApi.returnsByType(from, to),
+    enabled: ready('returns-by-type'),
   });
 
   // The drill-down behind whichever total was clicked. Only fetched once one is opened.
@@ -133,6 +143,7 @@ export function ReportsPage() {
 
   const active = {
     'sales-by-type': openedType === null ? salesByType : salesList,
+    'returns-by-type': returnsByType,
     'sales-by-user': salesByUser,
     profit,
     'profit-by-product': byProduct,
@@ -228,6 +239,7 @@ export function ReportsPage() {
                 onBack={() => setOpenedType(null)}
               />
             ))}
+          {report === 'returns-by-type' && <ReturnsByTypeTable rows={returnsByType.data ?? []} />}
           {report === 'sales-by-user' && <UserSalesTable rows={salesByUser.data ?? []} />}
           {report === 'profit' && <ProfitTable rows={profit.data ?? []} />}
           {report === 'profit-by-product' && <ProductProfitTable rows={byProduct.data ?? []} />}
@@ -296,6 +308,43 @@ function SaleTypeTable({
           <td />
           <td />
           <td className="numeric">{formatPkr(grandTotal)}</td>
+        </tr>
+      </tfoot>
+    </table>
+  );
+}
+
+/** What came back, by the kind of sale it came back from. Already taken off the sales split. */
+function ReturnsByTypeTable({ rows }: { rows: SaleTypeReturns[] }) {
+  const total = rows.reduce((sum, row) => sum + row.amountReturned, 0);
+
+  return (
+    <table className="data-table" data-testid="returns-by-type">
+      <caption className="visually-hidden">Returns split by retail and wholesale</caption>
+      <thead>
+        <tr>
+          <th scope="col">Sale type</th>
+          <th scope="col">Returns</th>
+          <th scope="col">Items</th>
+          <th scope="col">Amount returned</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((row) => (
+          <tr key={row.saleType}>
+            <td>{row.saleType}</td>
+            <td className="numeric">{row.returnCount}</td>
+            <td className="numeric">{row.itemsReturned}</td>
+            <td className="numeric">{formatPkr(row.amountReturned)}</td>
+          </tr>
+        ))}
+      </tbody>
+      <tfoot>
+        <tr>
+          <th scope="row">Total</th>
+          <td />
+          <td />
+          <td className="numeric">{formatPkr(total)}</td>
         </tr>
       </tfoot>
     </table>

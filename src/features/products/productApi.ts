@@ -28,6 +28,11 @@ export interface Product {
   withSalesmen?: number;
   /** For a field salesman only: what HE carries — all he can sell. Null for everyone else. */
   inYourBag?: number | null;
+  /**
+   * A wholesale quote that fell back to the retail price — the product has no wholesale price set.
+   * Says only THAT it fell back, never the wholesale price itself.
+   */
+  quotedAtRetail?: boolean;
   isLowStock: boolean;
   isActive: boolean;
 

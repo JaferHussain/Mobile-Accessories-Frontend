@@ -244,7 +244,7 @@ describe('SaleReturnForm submission', () => {
 
     await waitFor(() =>
       // Nothing refunded — the return only reduces what is owed — so no refund method.
-      expect(onSubmit).toHaveBeenCalledWith([{ invoiceItemId: 11, quantity: 2 }], null, null, null),
+      expect(onSubmit).toHaveBeenCalledWith([{ invoiceItemId: 11, quantity: 2 }], null, null, null, null),
     );
   });
 
@@ -253,13 +253,15 @@ describe('SaleReturnForm submission', () => {
     const onSubmit = renderForm();
 
     setQty('Type-C Braided 2m', '1');
-    await user.type(screen.getByLabelText('Reason'), 'Faulty charger');
+    await user.selectOptions(screen.getByLabelText('Reason'), 'Faulty / not working');
+    await user.type(screen.getByLabelText('Note'), 'cracked at the connector');
     await user.click(screen.getByRole('button', { name: /record return/i }));
 
     await waitFor(() =>
       expect(onSubmit).toHaveBeenCalledWith(
         [{ invoiceItemId: 11, quantity: 1 }],
-        'Faulty charger',
+        'Faulty / not working — cracked at the connector',
+        null,
         null,
         null,
       ),
@@ -290,7 +292,7 @@ describe('SaleReturnForm submission', () => {
     await user.click(screen.getByRole('button', { name: /record return/i }));
 
     await waitFor(() =>
-      expect(onSubmit).toHaveBeenCalledWith([{ invoiceItemId: 11, quantity: 1 }], null, 'JazzCash', null),
+      expect(onSubmit).toHaveBeenCalledWith([{ invoiceItemId: 11, quantity: 1 }], null, 'JazzCash', null, { accountNumber: null, transactionId: null }),
     );
   });
 
@@ -333,7 +335,7 @@ describe('SaleReturnForm — the refund screenshot, as the return is recorded', 
     await user.click(screen.getByRole('button', { name: /record return/i }));
 
     await waitFor(() =>
-      expect(onSubmit).toHaveBeenCalledWith([{ invoiceItemId: 11, quantity: 1 }], null, 'EasyPaisa', shot),
+      expect(onSubmit).toHaveBeenCalledWith([{ invoiceItemId: 11, quantity: 1 }], null, 'EasyPaisa', shot, { accountNumber: null, transactionId: null }),
     );
   });
 
@@ -345,5 +347,41 @@ describe('SaleReturnForm — the refund screenshot, as the return is recorded', 
     await user.selectOptions(screen.getByLabelText(/refunded by/i), 'Cash');
 
     expect(screen.queryByLabelText(/screenshot/i)).not.toBeInTheDocument();
+  });
+});
+
+describe('SaleReturnForm — where a transfer refund went', () => {
+  it("asks for the customer's account number and transaction once a bank refund is chosen, and hands them on", async () => {
+    const user = userEvent.setup();
+    const onSubmit = renderForm(vi.fn().mockResolvedValue(undefined), 0);
+
+    setQty('Type-C Braided 2m', '1');
+    expect(screen.queryByLabelText(/account number/i)).not.toBeInTheDocument();
+
+    await user.selectOptions(screen.getByLabelText(/refunded by/i), 'BankTransfer');
+    await user.type(screen.getByLabelText(/account number/i), ' PK36 HABB 0012 ');
+    await user.type(screen.getByLabelText(/transaction id/i), 'FT-99812');
+    await user.click(screen.getByRole('button', { name: /record return/i }));
+
+    await waitFor(() =>
+      expect(onSubmit).toHaveBeenCalledWith(
+        [{ invoiceItemId: 11, quantity: 1 }],
+        null,
+        'BankTransfer',
+        null,
+        { accountNumber: 'PK36 HABB 0012', transactionId: 'FT-99812' },
+      ),
+    );
+  });
+
+  it('never asks for an account on a cash refund', async () => {
+    const user = userEvent.setup();
+    renderForm(vi.fn().mockResolvedValue(undefined), 0);
+
+    setQty('Type-C Braided 2m', '1');
+    await user.selectOptions(screen.getByLabelText(/refunded by/i), 'Cash');
+
+    expect(screen.queryByLabelText(/account number/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/transaction id/i)).not.toBeInTheDocument();
   });
 });

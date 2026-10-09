@@ -10,7 +10,7 @@ export const JOB_LABELS: Record<string, string> = {
   FieldSales: 'Field sales (salesman)',
 };
 
-const WATCH_LABELS: Record<WatchKind, string> = {
+export const WATCH_LABELS: Record<WatchKind, string> = {
   BigDiscount: 'Big discount',
   TransferWithoutProof: 'Transfer without proof',
   SameDayReturn: 'Same-day return',

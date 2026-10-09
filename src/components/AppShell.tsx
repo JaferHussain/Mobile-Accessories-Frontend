@@ -6,8 +6,8 @@ interface NavItem {
   to: string;
   label: string;
   adminOnly?: boolean;
-  /** Only the salesman in the market — his own sales, cash and commission. */
-  fieldSalesOnly?: boolean;
+  /** Staff only — their own day. The owner has the Dashboard and Team instead. */
+  staffOnly?: boolean;
 }
 
 interface NavGroup {
@@ -25,8 +25,9 @@ interface NavGroup {
 
 /** The owner's overview. Everything else belongs to a group. */
 const TOP_LEVEL: NavItem[] = [
-  // The salesman's own screen, first in his rail: he opens it on his phone between shops.
-  { to: '/my-day', label: 'My day', fieldSalesOnly: true },
+  // Each member of staff's own screen, first in their rail: the salesman opens it on his phone
+  // between shops, the counter shopkeeper at the end of the day. Never the owner's.
+  { to: '/my-day', label: 'My day', staffOnly: true },
   { to: '/dashboard', label: 'Dashboard', adminOnly: true },
   // Beside the Dashboard: the shop's figures, then the people behind them.
   { to: '/team', label: 'Team', adminOnly: true },
@@ -128,9 +129,8 @@ export function AppShell() {
   const { user, isAdmin, logout } = useAuth();
   const { pathname } = useLocation();
 
-  const inField = user?.job === 'FieldSales';
   const visible = (items: NavItem[]) =>
-    items.filter((item) => (!item.adminOnly || isAdmin) && (!item.fieldSalesOnly || inField));
+    items.filter((item) => (!item.adminOnly || isAdmin) && (!item.staffOnly || !isAdmin));
 
   const groups = NAV_GROUPS
     .map((group) => ({ ...group, items: visible(group.items) }))

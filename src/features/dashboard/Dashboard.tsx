@@ -49,6 +49,11 @@ export interface DashboardProps {
   period: DashboardPeriod;
   isLoading?: boolean;
   onPeriodChange: (period: DashboardPeriod) => void;
+  /**
+   * False when a page above already shows the heading and the period buttons (the lens
+   * dashboard). On by default, so the screen stands on its own.
+   */
+  showHeader?: boolean;
 }
 
 const PERIODS: ReadonlyArray<{ value: DashboardPeriod; label: string }> = [
@@ -97,9 +102,16 @@ function saleCount(count: number): string {
  * Net profit is the figure that matters, so it is coloured by whether the period made or lost
  * money — a loss should be obvious at a glance, not buried in a row of identical tiles.
  */
-export function Dashboard({ data, period, isLoading = false, onPeriodChange }: DashboardProps) {
+export function Dashboard({
+  data,
+  period,
+  isLoading = false,
+  onPeriodChange,
+  showHeader = true,
+}: DashboardProps) {
   return (
     <section className="dashboard">
+      {showHeader && (
       <header className="dashboard__header">
         <h2>Dashboard</h2>
 
@@ -117,6 +129,7 @@ export function Dashboard({ data, period, isLoading = false, onPeriodChange }: D
           ))}
         </div>
       </header>
+      )}
 
       {isLoading && <p role="status">Loading…</p>}
 

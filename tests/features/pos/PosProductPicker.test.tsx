@@ -74,6 +74,36 @@ function cartRows() {
 beforeEach(() => vi.clearAllMocks());
 
 describe('POS search results', () => {
+  it('re-reads the cards on screen when the sale type changes, so Add charges the new rate', async () => {
+    // The owner's report: search, switch to Wholesale, press Add — the item went in at RETAIL,
+    // because the card had been fetched before the switch.
+    const { onFindProduct } = renderPos();
+    vi.mocked(onFindProduct).mockImplementation(async (_term, saleType) => ({
+      kind: 'matches',
+      products: [{ ...cable, salePrice: saleType === 'Wholesale' ? 950 : 1100 }],
+    }));
+
+    await searchFor('type-c');
+    expect(await screen.findByTestId('pos-result-1')).toHaveTextContent('Rs 1,100.00');
+
+    await userEvent.click(screen.getByRole('radio', { name: /wholesale/i }));
+
+    await waitFor(() => expect(screen.getByTestId('pos-result-1')).toHaveTextContent('Rs 950.00'));
+    expect(onFindProduct).toHaveBeenLastCalledWith('type-c', 'Wholesale');
+
+    await userEvent.click(within(screen.getByTestId('pos-result-1')).getByRole('button', { name: 'Add' }));
+    expect(within(cartRows()[0]!).getByLabelText(/price for type-c braided cable/i)).toHaveValue(950);
+  });
+
+  it('says so when a wholesale sale falls back to the retail price', async () => {
+    const { onFindProduct } = renderPos();
+    vi.mocked(onFindProduct).mockResolvedValue({ kind: 'matches', products: [{ ...cable, quotedAtRetail: true }] });
+
+    await searchFor('type-c');
+
+    expect(within(await screen.findByTestId('pos-result-1')).getByText(/no wholesale price — retail rate/i)).toBeInTheDocument();
+  });
+
   it('tells the counter how many are on the shelf, and how many are out with the salesman', async () => {
     const { onFindProduct } = renderPos();
     vi.mocked(onFindProduct).mockResolvedValue({

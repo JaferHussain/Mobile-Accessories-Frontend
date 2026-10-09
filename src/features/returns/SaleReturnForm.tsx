@@ -24,6 +24,12 @@ export interface ReturnableLine {
   discountPerUnit: number;
 }
 
+/** Where a refund sent by transfer went. Both optional — nobody waits while a reference is found. */
+export interface RefundReference {
+  accountNumber: string | null;
+  transactionId: string | null;
+}
+
 export interface SaleReturnFormProps {
   invoiceNumber: string;
   /** What the customer still owes on this invoice, if anything. */
@@ -39,8 +45,18 @@ export interface SaleReturnFormProps {
     refundMethod: PaymentMethod | null,
     /** A transfer refund's screenshot, chosen as the return is recorded. Null when none was. */
     proofFile: File | null,
+    /** The customer's account a transfer refund went to, and its transaction. Null for cash. */
+    reference: RefundReference | null,
   ) => Promise<void>;
 }
+
+/** Why goods come back — a standard answer, so the owner can see which reason is common. */
+export const RETURN_REASONS = [
+  'Faulty / not working',
+  'Wrong item',
+  'Customer changed mind',
+  'Other',
+] as const;
 
 /** The real ways to hand money back. Credit and Partial describe an unpaid sale. */
 const REFUND_METHODS = PAYMENT_METHODS.filter(
@@ -60,10 +76,13 @@ export function SaleReturnForm({
   onSubmit,
 }: SaleReturnFormProps) {
   const [quantities, setQuantities] = useState<Record<number, number>>({});
+  const [reasonKind, setReasonKind] = useState('');
   const [reason, setReason] = useState('');
   // Starts unanswered: assuming Cash showed every JazzCash refund as the drawer running over.
   const [refundMethod, setRefundMethod] = useState<PaymentMethod | ''>('');
   const [proofFile, setProofFile] = useState<File | null>(null);
+  const [accountNumber, setAccountNumber] = useState('');
+  const [transactionId, setTransactionId] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -132,9 +151,14 @@ export function SaleReturnForm({
     try {
       await onSubmit(
         items,
-        reason.trim() || null,
+        // "Faulty / not working — screen cracked": the pick, then any note after it.
+        [reasonKind, reason.trim()].filter(Boolean).join(' — ') || null,
         refunds ? (refundMethod as PaymentMethod) : null,
         refunds && needsProof(refundMethod) ? proofFile : null,
+        // Only a transfer went to an account. Blank is "not given", sent as null.
+        refunds && needsProof(refundMethod)
+          ? { accountNumber: accountNumber.trim() || null, transactionId: transactionId.trim() || null }
+          : null,
       );
     } catch (error) {
       setFormError(
@@ -212,11 +236,27 @@ export function SaleReturnForm({
       </table>
 
       <div className="field">
-        <label htmlFor="returnReason">Reason</label>
+        <label htmlFor="returnReasonKind">Reason</label>
+        <select
+          id="returnReasonKind"
+          value={reasonKind}
+          onChange={(event) => setReasonKind(event.target.value)}
+        >
+          <option value="">Choose a reason (optional)</option>
+          {RETURN_REASONS.map((option) => (
+            <option key={option} value={option}>
+              {option}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div className="field">
+        <label htmlFor="returnReason">Note</label>
         <input
           id="returnReason"
           value={reason}
-          placeholder="e.g. faulty charger"
+          placeholder="e.g. cracked at the connector"
           onChange={(event) => setReason(event.target.value)}
         />
       </div>
@@ -280,6 +320,32 @@ export function SaleReturnForm({
               carry its screenshot as proof.
             </small>
           </div>
+
+          {/* Asked as soon as a transfer is chosen: the customer's account the money went to. */}
+          {needsProof(refundMethod) && (
+            <div className="refund-reference">
+              <div className="field">
+                <label htmlFor="refundAccount">Customer&apos;s account number</label>
+                <input
+                  id="refundAccount"
+                  maxLength={50}
+                  placeholder="The account the refund was sent to"
+                  value={accountNumber}
+                  onChange={(event) => setAccountNumber(event.target.value)}
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="refundTransaction">Transaction ID</label>
+                <input
+                  id="refundTransaction"
+                  maxLength={64}
+                  value={transactionId}
+                  onChange={(event) => setTransactionId(event.target.value)}
+                />
+                <small className="field__hint">Optional — the return is saved either way.</small>
+              </div>
+            </div>
+          )}
 
           <ProofFileField id="refundProof" method={refundMethod} onFile={setProofFile} />
         </>

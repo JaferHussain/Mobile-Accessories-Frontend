@@ -8,6 +8,7 @@ import { myDayApi, type MyDay } from '@/features/myDay/myDayApi';
 import { commissionApi, type CommissionStatement } from '@/features/commission/commissionApi';
 import { salesmanCashApi, type SalesmanCashStatement } from '@/features/salesmanCash/salesmanCashApi';
 import { salesmanStockApi } from '@/features/salesmanStock/salesmanStockApi';
+import { recoveryApi } from '@/features/recovery/recoveryApi';
 import { AuthProvider } from '@/features/auth/AuthContext';
 import type { AuthUser } from '@/types/api';
 
@@ -15,6 +16,7 @@ vi.mock('@/features/myDay/myDayApi', () => ({ myDayApi: { mine: vi.fn() } }));
 vi.mock('@/features/commission/commissionApi', () => ({ commissionApi: { mine: vi.fn() } }));
 vi.mock('@/features/salesmanCash/salesmanCashApi', () => ({ salesmanCashApi: { mine: vi.fn() } }));
 vi.mock('@/features/salesmanStock/salesmanStockApi', () => ({ salesmanStockApi: { mine: vi.fn() } }));
+vi.mock('@/features/recovery/recoveryApi', () => ({ recoveryApi: { report: vi.fn() } }));
 
 /**
  * The salesman's own screen, on his phone: what he sold, the cash he is carrying, and the
@@ -96,6 +98,22 @@ function renderPage(user: AuthUser = salesman) {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(myDayApi.mine).mockResolvedValue(day);
+  vi.mocked(recoveryApi.report).mockResolvedValue({
+    totalOwed: 9_600,
+    customersOwing: 2,
+    overdueCustomers: 1,
+    overdueAmount: 6_200,
+    accounts: [
+      {
+        customerId: 1, name: 'Ikram', mobileNumber: null, isUdhaarCustomer: true, outstanding: 6_200,
+        unpaidSince: '2026-08-01', dueOn: '2026-09-01', monthsOverdue: 2, notPaidBills: 1, partPaidBills: 0, openBills: [],
+      },
+      {
+        customerId: 2, name: 'Bilal Traders', mobileNumber: null, isUdhaarCustomer: true, outstanding: 3_400,
+        unpaidSince: '2026-10-01', dueOn: '2026-11-01', monthsOverdue: 0, notPaidBills: 0, partPaidBills: 1, openBills: [],
+      },
+    ],
+  });
   vi.mocked(commissionApi.mine).mockResolvedValue(commission);
   vi.mocked(salesmanCashApi.mine).mockResolvedValue(cash);
   vi.mocked(salesmanStockApi.mine).mockResolvedValue({
@@ -176,5 +194,34 @@ describe('my day', () => {
     expect(commissionApi.mine).not.toHaveBeenCalled();
     expect(salesmanCashApi.mine).not.toHaveBeenCalled();
     expect(salesmanStockApi.mine).not.toHaveBeenCalled();
+  });
+
+  it('shows the counter shopkeeper who to chase, most overdue first, and his discounts', async () => {
+    renderPage(counter);
+
+    const chase = await screen.findByTestId('my-chase');
+
+    expect(within(chase).getByText('Ikram')).toBeInTheDocument();
+    expect(within(chase).getByText(/2 months overdue/)).toBeInTheDocument();
+    expect(within(chase).getByText('Bilal Traders')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /open recovery/i })).toHaveAttribute('href', '/recovery');
+    expect(screen.getByTestId('my-discounts')).toHaveTextContent(/150/);
+  });
+
+  it('keeps the chase list off the salesman in the market, who has his own round', async () => {
+    renderPage(salesman);
+
+    await screen.findByTestId('my-sales');
+
+    expect(screen.queryByTestId('my-chase')).not.toBeInTheDocument();
+    expect(recoveryApi.report).not.toHaveBeenCalled();
+  });
+
+  it('carries no cost and no profit on either kind of day', async () => {
+    renderPage(counter);
+
+    await screen.findByTestId('my-sales');
+
+    expect(screen.queryByText(/profit|cost/i)).not.toBeInTheDocument();
   });
 });

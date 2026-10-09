@@ -34,6 +34,14 @@ export interface SaleTypeTotals {
   itemsSold: number;
 }
 
+/** What came back in the period for one kind of sale. */
+export interface SaleTypeReturns {
+  saleType: 'Retail' | 'Wholesale';
+  returnCount: number;
+  itemsReturned: number;
+  amountReturned: number;
+}
+
 /** One sale in the drill-down behind a retail or wholesale total. */
 export interface SaleListRow {
   invoiceId: number;
@@ -143,6 +151,12 @@ export const reportApi = {
   salesByType(from: string, to: string): Promise<SaleTypeTotals[]> {
     return unwrap(
       api.get<ApiEnvelope<SaleTypeTotals[]>>('/reports/sales-by-type', { params: { from, to } }),
+    );
+  },
+
+  returnsByType(from: string, to: string): Promise<SaleTypeReturns[]> {
+    return unwrap(
+      api.get<ApiEnvelope<SaleTypeReturns[]>>('/reports/returns-by-type', { params: { from, to } }),
     );
   },
 
