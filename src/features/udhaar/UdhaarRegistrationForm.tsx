@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { ApiError } from '@/types/api';
 import type { UdhaarCustomer } from './udhaarApi';
 
@@ -12,6 +12,11 @@ export interface UdhaarRegistrationValues {
 export interface UdhaarRegistrationFormProps {
   /** An existing customer being made an udhaar customer, or completing their ID card. Absent for a new one. */
   existing?: UdhaarCustomer;
+  /**
+   * Editing a registered udhaar customer's details rather than registering one: the name is
+   * editable, and the ID card photos are optional — a photo replaces only the side it is for.
+   */
+  isEdit?: boolean;
   onSubmit: (values: UdhaarRegistrationValues) => Promise<void>;
   onCancel: () => void;
 }
@@ -30,19 +35,17 @@ function CardSide({
   onFile: (file: File | null) => void;
   alreadyOnFile: boolean;
 }) {
-  const [preview, setPreview] = useState<string | null>(null);
+  // Derived from the chosen file, and the object URL is released when the file changes or the form closes.
+  const preview = useMemo(() => (file ? URL.createObjectURL(file) : null), [file]);
 
-  useEffect(() => {
-    if (!file) {
-      setPreview(null);
-      return undefined;
-    }
-
-    const url = URL.createObjectURL(file);
-    setPreview(url);
-
-    return () => URL.revokeObjectURL(url);
-  }, [file]);
+  useEffect(
+    () => () => {
+      if (preview) {
+        URL.revokeObjectURL(preview);
+      }
+    },
+    [preview],
+  );
 
   return (
     <div className="field id-card-side">
@@ -68,7 +71,7 @@ function CardSide({
  * required for a new registration; for an existing customer a side already on file may be kept.
  * The server checks the same again — this only says what is missing before anything is sent.
  */
-export function UdhaarRegistrationForm({ existing, onSubmit, onCancel }: UdhaarRegistrationFormProps) {
+export function UdhaarRegistrationForm({ existing, isEdit = false, onSubmit, onCancel }: UdhaarRegistrationFormProps) {
   const [name, setName] = useState(existing?.name ?? '');
   const [mobileNumber, setMobileNumber] = useState(existing?.mobileNumber ?? '');
   const [idCardFront, setIdCardFront] = useState<File | null>(null);
@@ -83,7 +86,7 @@ export function UdhaarRegistrationForm({ existing, onSubmit, onCancel }: UdhaarR
     event.preventDefault();
     setError(null);
 
-    if (!existing && !name.trim()) {
+    if ((!existing || isEdit) && !name.trim()) {
       setError("Enter the customer's name.");
       return;
     }
@@ -93,7 +96,8 @@ export function UdhaarRegistrationForm({ existing, onSubmit, onCancel }: UdhaarR
       return;
     }
 
-    if ((!idCardFront && !frontOnFile) || (!idCardBack && !backOnFile)) {
+    // Editing never forces a photo: the card on file stays unless a new one is chosen.
+    if (!isEdit && ((!idCardFront && !frontOnFile) || (!idCardBack && !backOnFile))) {
       setError('Add a photo of both sides of the customer’s ID card.');
       return;
     }
@@ -111,8 +115,18 @@ export function UdhaarRegistrationForm({ existing, onSubmit, onCancel }: UdhaarR
 
   return (
     <form className="card udhaar-form" onSubmit={(event) => void submit(event)} noValidate>
-      <h3>{existing ? `Make ${existing.name} an udhaar customer` : 'Register udhaar customer'}</h3>
-      <p className="field__hint">Only registered udhaar customers can be sold to on full udhaar.</p>
+      <h3>
+        {isEdit && existing
+          ? `Edit ${existing.name}`
+          : existing
+            ? `Make ${existing.name} an udhaar customer`
+            : 'Register udhaar customer'}
+      </h3>
+      <p className="field__hint">
+        {isEdit
+          ? 'Correct the name or phone number. Choose an ID card photo only to replace that side — what they owe does not change.'
+          : 'Only registered udhaar customers can be sold to on full udhaar.'}
+      </p>
 
       {error && (
         <p className="form-error" role="alert">
@@ -120,7 +134,7 @@ export function UdhaarRegistrationForm({ existing, onSubmit, onCancel }: UdhaarR
         </p>
       )}
 
-      {!existing && (
+      {(!existing || isEdit) && (
         <div className="field">
           <label htmlFor="udhaarName">Name</label>
           <input id="udhaarName" value={name} maxLength={150} onChange={(event) => setName(event.target.value)} />
@@ -151,7 +165,7 @@ export function UdhaarRegistrationForm({ existing, onSubmit, onCancel }: UdhaarR
 
       <div className="form-actions">
         <button type="submit" className="button--primary" disabled={isSaving}>
-          {isSaving ? 'Saving…' : existing ? 'Save udhaar customer' : 'Register'}
+          {isSaving ? 'Saving…' : isEdit ? 'Save changes' : existing ? 'Save udhaar customer' : 'Register'}
         </button>
         <button type="button" disabled={isSaving} onClick={onCancel}>
           Cancel

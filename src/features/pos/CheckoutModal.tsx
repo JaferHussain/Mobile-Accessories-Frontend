@@ -1,7 +1,13 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { formatPkr, roundMoney } from '@/lib/money';
 import { ApiError } from '@/types/api';
-import { FULLY_PAID_METHODS, PAYMENT_METHODS, type CustomerSummary, type PaymentMethod } from './posApi';
+import {
+  FULLY_PAID_METHODS,
+  PAYMENT_METHODS,
+  type CustomerSummary,
+  type PaymentMethod,
+  type SaleType,
+} from './posApi';
 
 /**
  * The last step of a sale: who is buying, and how they are paying.
@@ -14,6 +20,11 @@ import { FULLY_PAID_METHODS, PAYMENT_METHODS, type CustomerSummary, type Payment
  *   <li>Full udhaar appears only once an udhaar customer is chosen.</li>
  *   <li>A walk-in may pay part — the owner's call — but the counter takes a name and phone for that
  *   bill, because a debt with no name can never be collected.</li>
+ *   <li><b>An udhaar customer is asked first: pay part now, or full udhaar.</b> Paying part then asks
+ *   how that part was paid — cash or which transfer — and how much. A part paid by transfer is saved
+ *   under that method, so day close never counts it as cash in the drawer.</li>
+ *   <li><b>A retail sale to a walk-in is not asked how it was paid</b> — the owner's rule: it is paid
+ *   in full, in cash. A wholesale walk-in, and any udhaar customer, are asked.</li>
  * </ul>
  *
  * <p>The server decides all of this again from its own totals; the screen only keeps a choice that
@@ -42,6 +53,8 @@ export interface CheckoutDetails {
 export interface CheckoutModalProps {
   /** The bill being settled. The server recomputes it; this is what the customer is told. */
   total: number;
+  /** Retail or wholesale, as chosen at the top of the sale. Retail to a walk-in is cash, unasked. */
+  saleType?: SaleType;
   /** The owner: may give udhaar and take part payments. */
   canSellOnCredit: boolean;
   /**
@@ -64,11 +77,18 @@ export interface CheckoutModalProps {
 
 type CustomerMode = 'walkin' | 'udhaar';
 
+/** How an udhaar customer settles this bill — asked first, before anything else about payment. */
+type UdhaarSettlement = 'part' | 'full';
+
+/** The ways the part paid now can arrive: cash, or one of the transfers. */
+const PAID_BY = PAYMENT_METHODS.filter((method) => FULLY_PAID_METHODS.includes(method.value));
+
 /** Methods that carry money from somewhere else, and so have an account behind them. */
 const TRANSFER_METHODS: readonly PaymentMethod[] = ['BankTransfer', 'JazzCash', 'EasyPaisa', 'Raast'];
 
 export function CheckoutModal({
   total,
+  saleType,
   canSellOnCredit,
   udhaarCustomersOnly = false,
   canTakePartPayment = false,
@@ -87,10 +107,15 @@ export function CheckoutModal({
   const [walkInName, setWalkInName] = useState('');
   const [walkInMobile, setWalkInMobile] = useState('');
 
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('Cash');
+  const [chosenMethod, setPaymentMethod] = useState<PaymentMethod>('Cash');
   const [accountNumber, setAccountNumber] = useState('');
   const [transactionId, setTransactionId] = useState('');
   const [paidNow, setPaidNow] = useState(0);
+
+  // An udhaar customer's bill: part now or all on udhaar, and — for part — how it was paid. Both
+  // start unanswered: a default would quietly put a JazzCash part into the drawer as cash.
+  const [settlement, setSettlement] = useState<UdhaarSettlement | ''>('');
+  const [paidBy, setPaidBy] = useState<PaymentMethod | ''>('');
 
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -111,26 +136,51 @@ export function CheckoutModal({
       (method.value !== 'Credit' || creditOffered) && (method.value !== 'Partial' || partialOffered),
   );
 
-  // Choosing a different customer can close a method again — never leave it selected behind the screen.
-  useEffect(() => {
-    if ((paymentMethod === 'Credit' && !creditOffered) || (paymentMethod === 'Partial' && !partialOffered)) {
-      setPaymentMethod('Cash');
-    }
-  }, [paymentMethod, creditOffered, partialOffered]);
+  // A retail sale to a walk-in is paid in full in cash and is not asked; anything else is.
+  const asksPayment = !(saleType === 'Retail' && customerMode === 'walkin');
 
+  // Choosing a different customer can close a method again — never leave it in force behind the
+  // screen. Worked out from the choice, not copied into state, so it can never go stale.
+  const chosenStillOffered =
+    (chosenMethod !== 'Credit' || creditOffered) && (chosenMethod !== 'Partial' || partialOffered);
+
+  // The two-step question is asked whenever the person at the counter may leave money owing for
+  // this customer. Someone who may not (no authority at all) settles in full, as before.
+  const udhaarFlow = customerMode === 'udhaar' && (selected === null || partialOffered || creditOffered);
+  // The udhaar customer's answer, only while the screen still offers it.
+  const udhaarSettlement: UdhaarSettlement | '' =
+    settlement === 'full' && creditOffered ? 'full' : settlement === 'part' && partialOffered ? 'part' : '';
+
+  // What the sale is saved as. For an udhaar customer: full udhaar is Credit; a part paid in cash
+  // is Partial (day close counts it in the drawer); a part paid by transfer carries that transfer's
+  // name, so it never lands in the drawer count and can carry its screenshot.
+  const paymentMethod: PaymentMethod = udhaarFlow
+    ? udhaarSettlement === 'full'
+      ? 'Credit'
+      : udhaarSettlement === 'part' && paidBy !== '' && paidBy !== 'Cash'
+        ? paidBy
+        : 'Partial'
+    : asksPayment && chosenStillOffered
+      ? chosenMethod
+      : 'Cash';
+
+  const payingPart = udhaarFlow ? udhaarSettlement === 'part' : paymentMethod === 'Partial';
   const isTransfer = TRANSFER_METHODS.includes(paymentMethod);
-  const isPartial = paymentMethod === 'Partial';
-  const walkInOwes = customerMode === 'walkin' && isPartial;
+  const walkInOwes = customerMode === 'walkin' && payingPart;
 
   // Derived, never typed twice: a cash-type method settles the bill, udhaar pays nothing, and a
   // part payment is whatever the shopkeeper entered.
   const amountPaid = useMemo(() => {
-    if (FULLY_PAID_METHODS.includes(paymentMethod)) {
-      return roundMoney(total);
+    if (payingPart) {
+      return roundMoney(paidNow);
     }
 
-    return isPartial ? roundMoney(paidNow) : 0;
-  }, [paymentMethod, isPartial, paidNow, total]);
+    if (udhaarFlow) {
+      return 0;
+    }
+
+    return FULLY_PAID_METHODS.includes(paymentMethod) ? roundMoney(total) : 0;
+  }, [payingPart, udhaarFlow, paymentMethod, paidNow, total]);
 
   const remaining = roundMoney(total - amountPaid);
 
@@ -178,7 +228,15 @@ export function CheckoutModal({
       return 'Find and select the udhaar customer, or choose walk-in.';
     }
 
-    if (isPartial) {
+    if (udhaarFlow && udhaarSettlement === '') {
+      return 'Choose how this bill is settled: pay part now, or full udhaar.';
+    }
+
+    if (udhaarFlow && udhaarSettlement === 'part' && paidBy === '') {
+      return 'Say how the part was paid — cash, bank transfer, JazzCash…';
+    }
+
+    if (payingPart) {
       if (amountPaid <= 0) {
         return 'The amount paid now must be greater than zero.';
       }
@@ -337,7 +395,77 @@ export function CheckoutModal({
         <fieldset className="checkout__payment">
           <legend>Payment</legend>
 
-          {methods.map((method) => (
+          {!asksPayment && (
+            <p className="checkout__paid-cash" data-testid="checkout-cash-only">
+              Retail sale to a walk-in — paid in full in cash.
+            </p>
+          )}
+
+          {/* An udhaar customer: first, part now or all on udhaar. */}
+          {udhaarFlow && selected && (partialOffered || creditOffered) && (
+            <div className="checkout__settle" role="radiogroup" aria-label="How is this bill settled?">
+              <p className="checkout__question">How is this bill settled?</p>
+              {partialOffered && (
+                <label className={`checkout__option${udhaarSettlement === 'part' ? ' is-active' : ''}`}>
+                  <input
+                    type="radio"
+                    name="udhaarSettlement"
+                    checked={udhaarSettlement === 'part'}
+                    onChange={() => {
+                      setSettlement('part');
+                      setError(null);
+                    }}
+                  />
+                  <span>
+                    <strong>Pay part now</strong>
+                    <small>Some of the bill now, the rest on udhaar.</small>
+                  </span>
+                </label>
+              )}
+              {creditOffered && (
+                <label className={`checkout__option${udhaarSettlement === 'full' ? ' is-active' : ''}`}>
+                  <input
+                    type="radio"
+                    name="udhaarSettlement"
+                    checked={udhaarSettlement === 'full'}
+                    onChange={() => {
+                      setSettlement('full');
+                      setError(null);
+                    }}
+                  />
+                  <span>
+                    <strong>Full udhaar (credit)</strong>
+                    <small>Nothing paid now — the whole bill is owed.</small>
+                  </span>
+                </label>
+              )}
+            </div>
+          )}
+
+          {/* Then, for part: how that part arrived. */}
+          {udhaarFlow && udhaarSettlement === 'part' && (
+            <div className="checkout__paid-by" role="radiogroup" aria-label="Paid by">
+              <p className="checkout__question">Paid by</p>
+              {PAID_BY.map((method) => (
+                <label key={method.value} className="radio">
+                  <input
+                    type="radio"
+                    name="udhaarPaidBy"
+                    checked={paidBy === method.value}
+                    onChange={() => {
+                      setPaidBy(method.value);
+                      setError(null);
+                    }}
+                  />
+                  {method.label}
+                </label>
+              ))}
+            </div>
+          )}
+
+          {udhaarFlow && note && <small className="field__hint">{note}</small>}
+
+          {!udhaarFlow && asksPayment && methods.map((method) => (
             <label key={method.value} className="radio">
               <input
                 type="radio"
@@ -352,7 +480,7 @@ export function CheckoutModal({
             </label>
           ))}
 
-          {note && <small className="field__hint">{note}</small>}
+          {!udhaarFlow && asksPayment && note && <small className="field__hint">{note}</small>}
 
           {/* The money came from somewhere else, so there is something to record. Cash in the
               drawer has no account behind it and is never asked for one. */}
@@ -382,7 +510,7 @@ export function CheckoutModal({
             </>
           )}
 
-          {isPartial && (
+          {payingPart && (
             <div className="field">
               <label htmlFor="paidNow">Paid now</label>
               <input

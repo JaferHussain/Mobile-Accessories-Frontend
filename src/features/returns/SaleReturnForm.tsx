@@ -4,6 +4,7 @@ import { ApiError } from '@/types/api';
 import { PAYMENT_METHODS, type PaymentMethod } from '@/features/pos/posApi';
 import { ProofFileField } from '@/features/proofs/ProofFileField';
 import { needsProof } from '@/features/proofs/proofApi';
+import { accountLabel, methodsFor, type ShopAccount } from '@/features/shopAccounts/shopAccountApi';
 
 export interface ReturnableLine {
   invoiceItemId: number;
@@ -36,6 +37,11 @@ export interface SaleReturnFormProps {
   amountRemaining: number;
   lines: ReturnableLine[];
   /**
+   * The shop's registered accounts. "Refunded by" offers cash and each of these — the account the
+   * money left from. With none registered, the plain transfer methods are offered instead.
+   */
+  shopAccounts?: ShopAccount[];
+  /**
    * `refundMethod` is null when nothing is refunded — the return only reduces what the customer
    * owes. Whenever money goes back it is required: day close subtracts only cash refunds.
    */
@@ -47,6 +53,8 @@ export interface SaleReturnFormProps {
     proofFile: File | null,
     /** The customer's account a transfer refund went to, and its transaction. Null for cash. */
     reference: RefundReference | null,
+    /** The shop's own account the refund was paid from. Null for cash, or when none is registered. */
+    shopAccountId: number | null,
   ) => Promise<void>;
 }
 
@@ -57,6 +65,11 @@ export const RETURN_REASONS = [
   'Customer changed mind',
   'Other',
 ] as const;
+
+/** "JazzCash", "Bank transfer" — a method as the dropdown names it. */
+function methodLabelFor(method: PaymentMethod): string {
+  return PAYMENT_METHODS.find((option) => option.value === method)?.label ?? method;
+}
 
 /** The real ways to hand money back. Credit and Partial describe an unpaid sale. */
 const REFUND_METHODS = PAYMENT_METHODS.filter(
@@ -73,13 +86,22 @@ export function SaleReturnForm({
   invoiceNumber,
   amountRemaining,
   lines,
+  shopAccounts = [],
   onSubmit,
 }: SaleReturnFormProps) {
   const [quantities, setQuantities] = useState<Record<number, number>>({});
   const [reasonKind, setReasonKind] = useState('');
   const [reason, setReason] = useState('');
   // Starts unanswered: assuming Cash showed every JazzCash refund as the drawer running over.
-  const [refundMethod, setRefundMethod] = useState<PaymentMethod | ''>('');
+  // One choice: "Cash", a shop account and how it left ("account:7:Raast"), or — with no accounts
+  // registered — a method on its own.
+  const [refundChoice, setRefundChoice] = useState('');
+
+  const [, chosenId, chosenAccountMethod] = refundChoice.startsWith('account:') ? refundChoice.split(':') : [];
+  const chosenAccount = chosenId ? (shopAccounts.find((account) => String(account.id) === chosenId) ?? null) : null;
+  const refundMethod: PaymentMethod | '' = chosenAccount
+    ? (chosenAccountMethod as PaymentMethod)
+    : (refundChoice as PaymentMethod | '');
   const [proofFile, setProofFile] = useState<File | null>(null);
   const [accountNumber, setAccountNumber] = useState('');
   const [transactionId, setTransactionId] = useState('');
@@ -159,6 +181,7 @@ export function SaleReturnForm({
         refunds && needsProof(refundMethod)
           ? { accountNumber: accountNumber.trim() || null, transactionId: transactionId.trim() || null }
           : null,
+        refunds && chosenAccount ? chosenAccount.id : null,
       );
     } catch (error) {
       setFormError(
@@ -303,21 +326,35 @@ export function SaleReturnForm({
             <label htmlFor="refundMethod">Refunded by</label>
             <select
               id="refundMethod"
-              value={refundMethod}
-              onChange={(event) => setRefundMethod(event.target.value as PaymentMethod | '')}
+              value={refundChoice}
+              onChange={(event) => setRefundChoice(event.target.value)}
             >
               <option value="" disabled>
                 Choose how it was handed back
               </option>
-              {REFUND_METHODS.map((method) => (
-                <option key={method.value} value={method.value}>
-                  {method.label}
-                </option>
-              ))}
+              <option value="Cash">Cash (from the till)</option>
+              {shopAccounts.length > 0 ? (
+                <optgroup label="From a shop account">
+                  {shopAccounts.flatMap((account) =>
+                    methodsFor(account).map((method) => (
+                      <option key={`${account.id}-${method}`} value={`account:${account.id}:${method}`}>
+                        {accountLabel(account)} — {methodLabelFor(method)}
+                      </option>
+                    )),
+                  )}
+                </optgroup>
+              ) : (
+                REFUND_METHODS.filter((method) => method.value !== 'Cash').map((method) => (
+                  <option key={method.value} value={method.value}>
+                    {method.label}
+                  </option>
+                ))
+              )}
             </select>
             <small className="field__hint">
-              Only a cash refund is taken out of the drawer at day close. A transfer refund can
-              carry its screenshot as proof.
+              {shopAccounts.length > 0
+                ? 'Only a cash refund is taken out of the drawer at day close. A transfer refund names the shop account it left, and can carry its screenshot.'
+                : 'No shop accounts are registered yet — the owner adds them under Settings → Shop accounts. Only a cash refund is taken out of the drawer.'}
             </small>
           </div>
 

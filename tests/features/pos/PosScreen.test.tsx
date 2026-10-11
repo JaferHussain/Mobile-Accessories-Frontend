@@ -200,40 +200,29 @@ describe('PosScreen cart', () => {
 });
 
 describe('PosScreen discounts', () => {
-  it('applies a line discount', async () => {
+  it('offers no per-item discount — only a discount on the whole bill', async () => {
     const user = userEvent.setup();
     setup();
 
     await addCable(user);
-    setNumber('Discount for Type-C Braided 2m', '100');
 
-    expect(screen.getByTestId('total')).toHaveTextContent('Rs 1,000.00');
+    expect(screen.queryByLabelText(/discount for type-c braided 2m/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('columnheader', { name: /^discount$/i })).not.toBeInTheDocument();
+    expect(screen.getByLabelText(/whole-bill discount/i)).toBeInTheDocument();
   });
 
-  it('applies line and whole-bill discounts together', async () => {
+  it('takes the whole-bill discount off the total', async () => {
     const user = userEvent.setup();
     setup();
 
     await addCable(user);
     setNumber('Quantity for Type-C Braided 2m', '2');
     setNumber('Price for Type-C Braided 2m', '2500');
-    setNumber('Discount for Type-C Braided 2m', '100');
     setNumber(/whole-bill discount/i, '400');
 
-    // spec US1 scenario 2: 5,000 cart, 100 line, 400 order -> 4,500.
-    expect(screen.getByTestId('subtotal')).toHaveTextContent('Rs 4,900.00');
-    expect(screen.getByTestId('discount')).toHaveTextContent('Rs 500.00');
-    expect(screen.getByTestId('total')).toHaveTextContent('Rs 4,500.00');
-  });
-
-  it('warns when a discount exceeds the line', async () => {
-    const user = userEvent.setup();
-    setup();
-
-    await addCable(user);
-    setNumber('Discount for Type-C Braided 2m', '5000');
-
-    expect(await screen.findByRole('alert')).toHaveTextContent(/exceeds the line value/i);
+    expect(screen.getByTestId('subtotal')).toHaveTextContent('Rs 5,000.00');
+    expect(screen.getByTestId('discount')).toHaveTextContent('Rs 400.00');
+    expect(screen.getByTestId('total')).toHaveTextContent('Rs 4,600.00');
   });
 
   it('warns when the bill discount exceeds the subtotal', async () => {

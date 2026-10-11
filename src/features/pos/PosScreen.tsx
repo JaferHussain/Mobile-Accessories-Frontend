@@ -389,7 +389,8 @@ export function PosScreen({
           productId: line.productId,
           quantity: line.quantity,
           unitSalePrice: line.unitSalePrice,
-          lineDiscount: line.lineDiscount,
+          // Discount is given on the whole bill only (the owner's rule) — never per item.
+          lineDiscount: 0,
         })),
       });
 
@@ -586,7 +587,6 @@ export function PosScreen({
               <th scope="col">Product</th>
               <th scope="col">Qty</th>
               <th scope="col">Price</th>
-              <th scope="col">Discount</th>
               <th scope="col">Line total</th>
               <th scope="col">
                 <span className="visually-hidden">Remove</span>
@@ -614,23 +614,11 @@ export function PosScreen({
                     <input
                       type="number"
                       min="0"
-                      step="0.01"
+                      step="1"
                       aria-label={`Price for ${line.productName}`}
                       value={String(line.unitSalePrice)}
                       onChange={(e) =>
                         updateLine(line.productId, { unitSalePrice: Number(e.target.value) })
-                      }
-                    />
-                  </td>
-                  <td>
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      aria-label={`Discount for ${line.productName}`}
-                      value={String(line.lineDiscount)}
-                      onChange={(e) =>
-                        updateLine(line.productId, { lineDiscount: Number(e.target.value) })
                       }
                     />
                   </td>
@@ -712,6 +700,7 @@ export function PosScreen({
       {showCheckout && totals && (
         <CheckoutModal
           total={totals.total}
+          saleType={saleType}
           canSellOnCredit={canSellOnCredit}
           udhaarCustomersOnly={udhaarCustomersOnly}
           canTakePartPayment={canTakePartPayment}

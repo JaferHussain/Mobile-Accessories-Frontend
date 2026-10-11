@@ -113,7 +113,31 @@ describe('the stock with a salesman', () => {
     await user.click(screen.getByRole('button', { name: /issue to ali/i }));
 
     await waitFor(() =>
-      expect(salesmanStockApi.issue).toHaveBeenCalledWith(7, [{ productId: 13, quantity: 5 }], 'Morning round'),
+      expect(salesmanStockApi.issue).toHaveBeenCalledWith(
+        7,
+        [{ productId: 13, quantity: 5, commissionPerUnit: 0 }],
+        'Morning round',
+      ),
+    );
+  });
+
+  it('sets the commission he earns on each unit of a product, when giving it to him', async () => {
+    const user = userEvent.setup();
+    vi.mocked(salesmanStockApi.issue).mockResolvedValue(statement);
+    renderPage();
+
+    await screen.findByTestId('total-units');
+    await user.type(screen.getByLabelText(/find product/i), 'handsfree');
+    await user.click(screen.getByRole('button', { name: /^find$/i }));
+    await user.click(within(await screen.findByTestId('issue-result-13')).getByRole('button', { name: /add/i }));
+
+    const commission = screen.getByLabelText(/commission \/ unit/i);
+    await user.clear(commission);
+    await user.type(commission, '50');
+    await user.click(screen.getByRole('button', { name: /issue to ali/i }));
+
+    await waitFor(() =>
+      expect(salesmanStockApi.issue).toHaveBeenCalledWith(7, [{ productId: 13, quantity: 1, commissionPerUnit: 50 }], null),
     );
   });
 

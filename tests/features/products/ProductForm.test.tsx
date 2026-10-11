@@ -198,6 +198,27 @@ describe('ProductForm', () => {
     expect(screen.queryByLabelText('Sale price')).not.toBeInTheDocument();
   });
 
+  it('does not ask for a barcode when adding a product', async () => {
+    await renderForm({ onSubmit: vi.fn() });
+
+    expect(screen.queryByLabelText('Barcode')).not.toBeInTheDocument();
+  });
+
+  it('does not show a barcode when editing either, but keeps the one the product has', async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    const user = userEvent.setup();
+    await renderForm({ initial: existing, onSubmit });
+
+    expect(screen.queryByLabelText('Barcode')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /save product/i }));
+
+    // Saving an edit must never wipe the barcode the counter's scanner reads.
+    await waitFor(() =>
+      expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ barcode: '8901234567890' }), null),
+    );
+  });
+
   it('shows the server message when saving fails', async () => {
     const onSubmit = vi
       .fn()

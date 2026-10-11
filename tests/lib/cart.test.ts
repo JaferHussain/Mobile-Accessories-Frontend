@@ -34,9 +34,13 @@ describe('calculateCart', () => {
   });
 
   it('sums multiple lines', () => {
-    const totals = calculateCart([line(3, 250), line(2, 1100), line(1, 99.5)]);
+    const totals = calculateCart([line(3, 250), line(2, 1100), line(1, 99)]);
 
-    expect(totals.subtotal).toBe(3049.5);
+    expect(totals.subtotal).toBe(3049);
+  });
+
+  it('refuses a price with paisa — prices are whole rupees', () => {
+    expect(() => calculateCart([line(1, 99.5)])).toThrow(/whole rupees/);
   });
 
   it('computes the remaining amount on a partial payment', () => {
@@ -113,13 +117,14 @@ describe('calculateCart validation', () => {
 
 describe('money precision', () => {
   it('does not drift on amounts that break binary floating point', () => {
-    const totals = calculateCart([line(1, 0.1), line(1, 0.2)]);
+    // Prices are whole rupees, but a discount may still carry paisa — the arithmetic must not drift.
+    const totals = calculateCart([line(1, 1), line(1, 1)], 1.7);
 
-    expect(totals.subtotal).toBe(0.3);
+    expect(totals.total).toBe(0.3);
   });
 
   it('line totals sum exactly to the subtotal', () => {
-    const totals = calculateCart([line(3, 33.33), line(7, 12.12), line(2, 999.99)]);
+    const totals = calculateCart([line(3, 33), line(7, 12), line(2, 999)]);
     const summed = totals.lines.reduce((acc, l) => acc + l.lineTotal, 0);
 
     expect(roundMoney(summed)).toBe(totals.subtotal);

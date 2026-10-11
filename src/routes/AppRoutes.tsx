@@ -64,8 +64,9 @@ export function AppRoutes() {
           </ProtectedRoute>
         }
       >
-        {/* The counter is where a salesman starts, so it is the default screen. */}
-        <Route path="/" element={<Navigate to="/pos" replace />} />
+        {/* The counter is where the shop starts; the salesman in the market starts on his own
+            dashboard — what he carries, at what price, and what he has sold. */}
+        <Route path="/" element={<HomeRedirect />} />
         <Route path="/pos" element={<PosPage />} />
         <Route path="/products" element={<ProductsPage />} />
         <Route path="/customers" element={<CustomersPage />} />
@@ -117,4 +118,11 @@ export function AppRoutes() {
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
+}
+
+/** Where signing in lands: My day for a field salesman, the counter for everyone else. */
+function HomeRedirect() {
+  const { user } = useAuth();
+
+  return <Navigate to={user?.job === 'FieldSales' ? '/my-day' : '/pos'} replace />;
 }

@@ -59,6 +59,11 @@ function setup(overrides: Partial<Parameters<typeof PosScreen>[0]> = {}) {
 }
 
 async function sell(user: ReturnType<typeof userEvent.setup>, method?: RegExp) {
+  // A retail walk-in pays cash and is never asked; choosing a method needs a wholesale sale.
+  if (method) {
+    await user.click(screen.getByRole('radio', { name: /wholesale/i }));
+  }
+
   await user.type(screen.getByLabelText(/scan or search/i), 'cable');
   await user.click(screen.getByRole('button', { name: 'Search' }));
 

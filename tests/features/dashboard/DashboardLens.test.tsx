@@ -109,17 +109,14 @@ describe('the dashboard lens', () => {
     expect(await chip(/money/i)).toBeInTheDocument();
   });
 
-  it('puts what is worth a look before the figures, and counts it on the person it is about', async () => {
+  it('counts what is worth a look on the person it is about, without a list in the way', async () => {
     renderPage();
-
-    const strip = await screen.findByText(/1 to look at · Everyone/i);
-
-    expect(strip).toBeInTheDocument();
-    expect(screen.getByText('Same-day return')).toBeInTheDocument();
 
     // The count rides on the owner's chip, so a problem shows before anyone opens a person.
     const ownerChip = await chip(/shop owner/i);
+
     expect(within(ownerChip).getByTitle('1 to look at')).toBeInTheDocument();
+    expect(screen.queryByText(/to look at ·/i)).not.toBeInTheDocument();
   });
 
   it('compares everyone side by side, and a name opens that person', async () => {
@@ -151,7 +148,6 @@ describe('the dashboard lens', () => {
     await user.click(await chip(/moiz/i));
 
     expect(screen.queryByText('Cash with him')).not.toBeInTheDocument();
-    expect(screen.getByText(/Nothing to look at for Moiz/i)).toBeInTheDocument();
   });
 
   it("opens the owner's money: the drawer, expenses, what he owes and what is owed to him", async () => {
@@ -167,9 +163,6 @@ describe('the dashboard lens', () => {
     expect(within(suppliers).getByText('Al-Rehman Traders')).toBeInTheDocument();
     expect(within(suppliers).queryByText('Paid Up Supplies')).not.toBeInTheDocument();
     expect(within(await screen.findByTestId('money-owed')).getByText('Ikram')).toBeInTheDocument();
-
-    // Transfers still without their screenshot lead the money lens.
-    expect(screen.getByText(/2 transfers without a screenshot/i)).toBeInTheDocument();
   });
 
   it('asks the server for the days the chosen period covers', async () => {

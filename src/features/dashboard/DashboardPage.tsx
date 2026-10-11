@@ -4,7 +4,6 @@ import { Dashboard, type DashboardPeriod } from './Dashboard';
 import { dashboardApi } from './dashboardApi';
 import { periodRange } from './dashboardRange';
 import { LensChips, type Lens } from './LensChips';
-import { AttentionStrip } from './AttentionStrip';
 import { PersonView } from './PersonView';
 import { MoneyView } from './MoneyView';
 import { CompareTable } from './CompareTable';
@@ -58,8 +57,6 @@ export function DashboardPage() {
   const proofMissing = proofs.data?.length ?? 0;
   const person = typeof lens === 'number' ? people.find((member) => member.userId === lens) : undefined;
 
-  const attentionItems = typeof lens === 'number' ? flags.filter((item) => item.userId === lens) : lens === 'all' ? flags : [];
-  const attentionTitle = lens === 'all' ? 'Everyone' : lens === 'money' ? 'Money' : (person?.fullName ?? 'this person');
 
   return (
     <section className="dashboard">
@@ -88,12 +85,6 @@ export function DashboardPage() {
       )}
 
       <LensChips members={people} watch={flags} proofMissing={proofMissing} selected={lens} onSelect={setLens} />
-
-      <AttentionStrip
-        items={attentionItems}
-        title={attentionTitle}
-        proofMissing={lens === 'money' ? proofMissing : undefined}
-      />
 
       {lens === 'all' && (
         <>

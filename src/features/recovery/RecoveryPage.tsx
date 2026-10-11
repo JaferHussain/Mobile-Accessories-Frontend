@@ -15,10 +15,25 @@ type Filter = 'all' | 'udhaar' | 'partpaid' | 'overdue';
 
 const FILTERS: ReadonlyArray<[Filter, string]> = [
   ['all', 'All'],
-  ['udhaar', 'Udhaar customers'],
+  ['udhaar', 'Full udhaar'],
   ['partpaid', 'Part paid'],
   ['overdue', 'Overdue'],
 ];
+
+/**
+ * The two bill filters work on BILLS, not customers: one customer can owe a bill taken wholly on
+ * udhaar AND a bill paid in part. "Full udhaar" shows the bills nothing was paid on, "Part paid"
+ * the bills partly paid — each card then shows only those bills and what they still owe.
+ */
+const BILL_FILTER: Partial<Record<Filter, RecoveryBill['status']>> = {
+  udhaar: 'NotPaid',
+  partpaid: 'PartPaid',
+};
+
+function billsFor(account: RecoveryAccount, filter: Filter): RecoveryBill[] {
+  const status = BILL_FILTER[filter];
+  return status ? account.openBills.filter((bill) => bill.status === status) : account.openBills;
+}
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -45,9 +60,8 @@ function matches(account: RecoveryAccount, filter: Filter, search: string): bool
 
   switch (filter) {
     case 'udhaar':
-      return account.isUdhaarCustomer;
     case 'partpaid':
-      return account.partPaidBills > 0;
+      return billsFor(account, filter).length > 0;
     case 'overdue':
       return account.monthsOverdue > 0;
     default:
@@ -57,13 +71,19 @@ function matches(account: RecoveryAccount, filter: Filter, search: string): bool
 
 function AccountCard({
   account,
+  filter,
   onReceive,
 }: {
   account: RecoveryAccount;
+  filter: Filter;
   onReceive: (account: RecoveryAccount) => void;
 }) {
-  const [showBills, setShowBills] = useState(false);
+  const bills = billsFor(account, filter);
+  const byBill = BILL_FILTER[filter] !== undefined;
+  // A bill filter is about the bills, so they open with it; otherwise they wait for a click.
+  const [showBills, setShowBills] = useState(byBill);
   const overdue = account.monthsOverdue > 0;
+  const filteredOwed = bills.reduce((sum, bill) => sum + bill.remaining, 0);
 
   return (
     <article
@@ -82,7 +102,16 @@ function AccountCard({
             )}
           </span>
         </div>
-        <strong className="recovery-card__amount">{formatPkr(account.outstanding)}</strong>
+        <div className="recovery-card__owed">
+          <strong className="recovery-card__amount" data-testid={`recovery-amount-${account.customerId}`}>
+            {formatPkr(byBill ? filteredOwed : account.outstanding)}
+          </strong>
+          {byBill && filteredOwed !== account.outstanding && (
+            <small className="recovery-card__of">
+              {filter === 'udhaar' ? 'on full udhaar' : 'on part-paid bills'} · {formatPkr(account.outstanding)} owed in all
+            </small>
+          )}
+        </div>
       </header>
 
       <p className="recovery-card__when">
@@ -104,9 +133,9 @@ function AccountCard({
           customerMobile={account.mobileNumber}
           onCreateReminder={customerApi.reminder}
         />
-        {account.openBills.length > 0 && (
+        {bills.length > 0 && (
           <button type="button" className="link-button" aria-expanded={showBills} onClick={() => setShowBills((open) => !open)}>
-            {showBills ? 'Hide bills' : `Show ${account.openBills.length} open ${account.openBills.length === 1 ? 'bill' : 'bills'}`}
+            {showBills ? 'Hide bills' : `Show ${bills.length} open ${bills.length === 1 ? 'bill' : 'bills'}`}
           </button>
         )}
       </div>
@@ -124,7 +153,7 @@ function AccountCard({
             </tr>
           </thead>
           <tbody>
-            {account.openBills.map((bill, index) => (
+            {bills.map((bill, index) => (
               <tr key={`${bill.referenceId ?? 'b'}-${index}`}>
                 <td>{day(bill.onDate)}</td>
                 <td>{billLabel(bill)}</td>
@@ -190,6 +219,13 @@ export function RecoveryPage() {
   const shown = useMemo(
     () => (data?.accounts ?? []).filter((account) => matches(account, filter, search)),
     [data, filter, search],
+  );
+
+  // What the chosen bill filter adds up to — so the figure changes with the button, not just the list.
+  const shownOwed = shown.reduce(
+    (sum, account) =>
+      sum + (BILL_FILTER[filter] ? billsFor(account, filter).reduce((s, bill) => s + bill.remaining, 0) : account.outstanding),
+    0,
   );
 
   return (
@@ -264,6 +300,13 @@ export function RecoveryPage() {
               </div>
             </div>
 
+            {data.accounts.length > 0 && filter !== 'all' && (
+              <p className="recovery-summary" data-testid="recovery-summary">
+                {shown.length} {shown.length === 1 ? 'customer' : 'customers'} · {formatPkr(shownOwed)}
+                {filter === 'udhaar' ? ' on full udhaar' : filter === 'partpaid' ? ' on part-paid bills' : ' overdue'}
+              </p>
+            )}
+
             {data.accounts.length === 0 ? (
               <p className="empty-state">Nobody owes the shop anything. Every account is settled.</p>
             ) : shown.length === 0 ? (
@@ -272,8 +315,9 @@ export function RecoveryPage() {
               <div className="recovery-list">
                 {shown.map((account) => (
                   <AccountCard
-                    key={account.customerId}
+                    key={`${account.customerId}-${filter}`}
                     account={account}
+                    filter={filter}
                     onReceive={(chosen) => {
                       setJustPaid(null);
                       setReceiving(chosen);

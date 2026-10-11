@@ -1,8 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { SaleReturnForm, type ReturnableLine } from '@/features/returns/SaleReturnForm';
 import { ApiError } from '@/types/api';
+import type { ShopAccount } from '@/features/shopAccounts/shopAccountApi';
 
 /** T120 — the return form caps each line at what is still returnable (FR-026). */
 
@@ -244,7 +245,7 @@ describe('SaleReturnForm submission', () => {
 
     await waitFor(() =>
       // Nothing refunded — the return only reduces what is owed — so no refund method.
-      expect(onSubmit).toHaveBeenCalledWith([{ invoiceItemId: 11, quantity: 2 }], null, null, null, null),
+      expect(onSubmit).toHaveBeenCalledWith([{ invoiceItemId: 11, quantity: 2 }], null, null, null, null, null),
     );
   });
 
@@ -261,6 +262,7 @@ describe('SaleReturnForm submission', () => {
       expect(onSubmit).toHaveBeenCalledWith(
         [{ invoiceItemId: 11, quantity: 1 }],
         'Faulty / not working — cracked at the connector',
+        null,
         null,
         null,
         null,
@@ -292,7 +294,7 @@ describe('SaleReturnForm submission', () => {
     await user.click(screen.getByRole('button', { name: /record return/i }));
 
     await waitFor(() =>
-      expect(onSubmit).toHaveBeenCalledWith([{ invoiceItemId: 11, quantity: 1 }], null, 'JazzCash', null, { accountNumber: null, transactionId: null }),
+      expect(onSubmit).toHaveBeenCalledWith([{ invoiceItemId: 11, quantity: 1 }], null, 'JazzCash', null, { accountNumber: null, transactionId: null }, null),
     );
   });
 
@@ -335,7 +337,7 @@ describe('SaleReturnForm — the refund screenshot, as the return is recorded', 
     await user.click(screen.getByRole('button', { name: /record return/i }));
 
     await waitFor(() =>
-      expect(onSubmit).toHaveBeenCalledWith([{ invoiceItemId: 11, quantity: 1 }], null, 'EasyPaisa', shot, { accountNumber: null, transactionId: null }),
+      expect(onSubmit).toHaveBeenCalledWith([{ invoiceItemId: 11, quantity: 1 }], null, 'EasyPaisa', shot, { accountNumber: null, transactionId: null }, null),
     );
   });
 
@@ -370,6 +372,7 @@ describe('SaleReturnForm — where a transfer refund went', () => {
         'BankTransfer',
         null,
         { accountNumber: 'PK36 HABB 0012', transactionId: 'FT-99812' },
+        null,
       ),
     );
   });
@@ -385,3 +388,92 @@ describe('SaleReturnForm — where a transfer refund went', () => {
     expect(screen.queryByLabelText(/transaction id/i)).not.toBeInTheDocument();
   });
 });
+
+describe('SaleReturnForm — refunded from the shop\'s own accounts', () => {
+  const accounts: ShopAccount[] = [
+    { id: 3, name: 'HBL Current', accountType: 'Bank', accountNumber: '8989', accountTitle: null, isActive: true },
+    { id: 4, name: 'JazzCash 0300', accountType: 'JazzCash', accountNumber: '03001112223', accountTitle: null, isActive: true },
+  ];
+
+  function renderWithAccounts() {
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    render(
+      <SaleReturnForm
+        invoiceNumber="INV-0001"
+        amountRemaining={0}
+        lines={lines}
+        shopAccounts={accounts}
+        onSubmit={onSubmit}
+      />,
+    );
+    return onSubmit;
+  }
+
+  it('lists cash and every registered shop account — and no bare transfer methods', () => {
+    renderWithAccounts();
+    setQty('Type-C Braided 2m', '1');
+
+    const select = screen.getByLabelText(/refunded by/i);
+    const options = within(select).getAllByRole('option').map((option) => option.textContent);
+
+    expect(options).toContain('Cash (from the till)');
+    expect(options).toContain('HBL Current · 8989 — Bank transfer');
+    expect(options).toContain('HBL Current · 8989 — Raast');
+    expect(options).toContain('JazzCash 0300 · 03001112223 — JazzCash');
+    // A wallet pays only as itself — never as a bank transfer or Raast.
+    expect(options).not.toContain('JazzCash 0300 · 03001112223 — Raast');
+    expect(options).not.toContain('EasyPaisa');
+  });
+
+  it('refunds from the chosen account, under the method that account carries', async () => {
+    const user = userEvent.setup();
+    const onSubmit = renderWithAccounts();
+
+    setQty('Type-C Braided 2m', '1');
+    await user.selectOptions(screen.getByLabelText(/refunded by/i), 'account:4:JazzCash');
+    await user.click(screen.getByRole('button', { name: /record return/i }));
+
+    await waitFor(() =>
+      expect(onSubmit).toHaveBeenCalledWith(
+        [{ invoiceItemId: 11, quantity: 1 }],
+        null,
+        'JazzCash',
+        null,
+        { accountNumber: null, transactionId: null },
+        4,
+      ),
+    );
+  });
+
+  it('refunds by Raast from a bank account', async () => {
+    const user = userEvent.setup();
+    const onSubmit = renderWithAccounts();
+
+    setQty('Type-C Braided 2m', '1');
+    await user.selectOptions(screen.getByLabelText(/refunded by/i), 'account:3:Raast');
+    await user.click(screen.getByRole('button', { name: /record return/i }));
+
+    await waitFor(() =>
+      expect(onSubmit).toHaveBeenCalledWith(
+        [{ invoiceItemId: 11, quantity: 1 }],
+        null,
+        'Raast',
+        null,
+        { accountNumber: null, transactionId: null },
+        3,
+      ),
+    );
+  });
+
+  it('names no account on a cash refund', async () => {
+    const user = userEvent.setup();
+    const onSubmit = renderWithAccounts();
+
+    setQty('Type-C Braided 2m', '1');
+    await user.selectOptions(screen.getByLabelText(/refunded by/i), 'Cash');
+    await user.click(screen.getByRole('button', { name: /record return/i }));
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledWith([{ invoiceItemId: 11, quantity: 1 }], null, 'Cash', null, null, null));
+  });
+});
+

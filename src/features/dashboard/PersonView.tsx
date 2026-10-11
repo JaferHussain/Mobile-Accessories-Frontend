@@ -32,7 +32,7 @@ export function PersonView({ member, from, to }: { member: TeamMember; from: str
   return (
     <>
       <div className="dashboard__kpis dashboard__kpis--plain">
-        <Figure label="Sales (net of returns)" value={formatPkr(member.totalSales)} note={`${member.invoiceCount} bills`} />
+        <Figure label="Net sale" value={formatPkr(member.totalSales)} note={`${member.invoiceCount} bills`} />
         <Figure label="Average bill" value={formatPkr(average)} />
         <Figure label="Received at sale" value={formatPkr(member.receivedAtSale)} />
         <Figure label="Udhaar given" value={formatPkr(member.creditGiven)} />

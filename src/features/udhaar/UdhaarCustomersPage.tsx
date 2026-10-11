@@ -17,6 +17,7 @@ export function UdhaarCustomersPage() {
   const [search, setSearch] = useState('');
   const [isRegistering, setIsRegistering] = useState(false);
   const [completing, setCompleting] = useState<UdhaarCustomer | null>(null);
+  const [editing, setEditing] = useState<UdhaarCustomer | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -67,14 +68,35 @@ export function UdhaarCustomersPage() {
     await refresh();
   }
 
+  async function saveEdit(values: UdhaarRegistrationValues) {
+    if (!editing) {
+      return;
+    }
+
+    const saved = await udhaarApi.update(editing.id, {
+      name: values.name,
+      mobileNumber: values.mobileNumber,
+      idCardFront: values.idCardFront,
+      idCardBack: values.idCardBack,
+    });
+    setNotice(`${saved.name}'s details are saved.`);
+    setEditing(null);
+    await Promise.all([
+      refresh(),
+      queryClient.invalidateQueries({ queryKey: ['customer', saved.id] }),
+      queryClient.invalidateQueries({ queryKey: ['udhaar-status', saved.id] }),
+    ]);
+  }
+
   const rows = list.data ?? [];
+  const busy = isRegistering || completing !== null || editing !== null;
   const missing = rows.filter((row) => row.idCardMissing).length;
 
   return (
     <section>
       <header className="page-header">
         <h2>Udhaar customers</h2>
-        {!isRegistering && !completing && (
+        {!busy && (
           <button type="button" className="button--primary" onClick={() => setIsRegistering(true)}>
             Register udhaar customer
           </button>
@@ -102,6 +124,16 @@ export function UdhaarCustomersPage() {
 
       {completing && (
         <UdhaarRegistrationForm existing={completing} onSubmit={complete} onCancel={() => setCompleting(null)} />
+      )}
+
+      {editing && (
+        <UdhaarRegistrationForm
+          key={editing.id}
+          existing={editing}
+          isEdit
+          onSubmit={saveEdit}
+          onCancel={() => setEditing(null)}
+        />
       )}
 
       <div className="filters">
@@ -155,6 +187,18 @@ export function UdhaarCustomersPage() {
                 </td>
                 <td className="row-actions">
                   <IdCardViewer customer={row} />
+                  <button
+                    type="button"
+                    disabled={busy}
+                    aria-label={`Edit ${row.name}`}
+                    onClick={() => {
+                      setNotice(null);
+                      setError(null);
+                      setEditing(row);
+                    }}
+                  >
+                    Edit
+                  </button>
                   {row.idCardMissing && (
                     <button
                       type="button"

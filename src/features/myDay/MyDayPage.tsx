@@ -6,14 +6,21 @@ import { formatPkr } from '@/lib/money';
 import { useAuth } from '@/features/auth/AuthContext';
 import { commissionApi } from '@/features/commission/commissionApi';
 import { salesmanCashApi } from '@/features/salesmanCash/salesmanCashApi';
-import { salesmanStockApi } from '@/features/salesmanStock/salesmanStockApi';
 import { formatTime } from '@/features/team/TeamPage';
 import { KIND_LABELS, detailsFor } from '@/features/team/TeamMemberPage';
 import { recoveryApi } from '@/features/recovery/recoveryApi';
 import { myDayApi } from './myDayApi';
+import { MyProductsPanels } from './MyProductsPanels';
+import { MyPaymentsCard } from './MyPaymentsCard';
+import { FULLY_PAID_METHODS } from '@/features/pos/posApi';
 import { shopMonthStart, shopToday } from '@/lib/shopDay';
 
 type Period = 'today' | 'month';
+
+/** A transfer: Bank transfer, JazzCash, EasyPaisa, Raast — never cash, a cash part, or udhaar. */
+function isOnline(method: string | null): boolean {
+  return method !== null && method !== 'Cash' && FULLY_PAID_METHODS.includes(method as never);
+}
 
 /**
  * The salesman's own screen, made for his phone: what he sold, the cash he is carrying, and the
@@ -41,7 +48,6 @@ export function MyDayPage() {
   // All-time, not the period: cash is what he holds now, commission what he is owed now.
   const cash = useQuery({ queryKey: ['my-cash'], queryFn: () => salesmanCashApi.mine(), enabled: inField });
   const commission = useQuery({ queryKey: ['my-commission'], queryFn: () => commissionApi.mine(), enabled: inField });
-  const stock = useQuery({ queryKey: ['my-stock'], queryFn: () => salesmanStockApi.mine(), enabled: inField });
 
   // The counter chases money: who owes, most overdue first. The salesman has his own round.
   const owing = useQuery({ queryKey: ['recovery'], queryFn: () => recoveryApi.report(), enabled: !inField });
@@ -62,6 +68,10 @@ export function MyDayPage() {
           This month
         </button>
       </div>
+
+      {day.data?.payments && (
+        <MyPaymentsCard payments={day.data.payments} periodLabel={period === 'today' ? 'Today' : 'This month'} />
+      )}
 
       <div className="team-grid">
         <QueryState isLoading={day.isPending} error={day.error}>
@@ -156,34 +166,10 @@ export function MyDayPage() {
         )}
       </div>
 
+      {/* The salesman's products: what he carries, at its price, and what he sold. They replace
+          the plain stock list, which said how many but not what they are worth. */}
       {inField && (
-        <section className="my-day__stock" aria-labelledby="my-stock-heading">
-          <h3 id="my-stock-heading">My stock</h3>
-          <QueryState isLoading={stock.isPending} error={stock.error}>
-            {stock.data && stock.data.items.length === 0 && (
-              <p className="empty-state">You are carrying nothing. The owner issues stock to you before you go out.</p>
-            )}
-            {stock.data && stock.data.items.length > 0 && (
-              <table className="data-table">
-                <caption className="visually-hidden">Stock I am carrying</caption>
-                <thead>
-                  <tr>
-                    <th scope="col">Product</th>
-                    <th scope="col">With me</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {stock.data.items.map((item) => (
-                    <tr key={item.productId}>
-                      <td>{item.productName}</td>
-                      <td className="numeric">{item.quantity}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </QueryState>
-        </section>
+        <MyProductsPanels from={from} to={today} periodLabel={period === 'today' ? 'Today' : 'This month'} />
       )}
 
       {!inField && (
@@ -226,6 +212,8 @@ export function MyDayPage() {
             <li key={`${row.kind}-${row.referenceId}`} className={`timeline__item timeline__item--${row.kind}`}>
               <time dateTime={row.entryDateUtc}>{formatTime(row.entryDateUtc)}</time>
               <strong>{KIND_LABELS[row.kind]}</strong>
+              {/* An online sale says so plainly — the money is not in his pocket. */}
+              {row.kind === 'Sale' && isOnline(row.method) && <span className="badge badge--online">Online</span>}
               {row.reference && <span>{row.reference}</span>}
               {row.amount !== null && <span className="numeric">{formatPkr(row.amount)}</span>}
               {detailsFor(row) && <small>{detailsFor(row)}</small>}

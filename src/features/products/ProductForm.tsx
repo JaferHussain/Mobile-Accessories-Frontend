@@ -52,6 +52,8 @@ export function ProductForm({ initial, onSubmit, onCancel }: ProductFormProps) {
           categoryId: initial.categoryId,
           brandId: initial.brandId ?? null,
           model: initial.model ?? '',
+          // No longer on the form (the owner's choice), but carried through untouched so saving an
+          // edit never wipes a barcode the counter's scanner still reads.
           barcode: initial.barcode ?? '',
           minStockThreshold: initial.minStockThreshold ?? 0,
           supplierId: initial.supplierId ?? null,
@@ -300,14 +302,6 @@ export function ProductForm({ initial, onSubmit, onCancel }: ProductFormProps) {
         <input id="model" value={values.model ?? ''} onChange={(e) => set('model', e.target.value)} />
       </div>
 
-      <div className="field">
-        <label htmlFor="barcode">Barcode</label>
-        <input
-          id="barcode"
-          value={values.barcode ?? ''}
-          onChange={(e) => set('barcode', e.target.value)}
-        />
-      </div>
 
       <div className="field">
         <label htmlFor="picture">Picture</label>

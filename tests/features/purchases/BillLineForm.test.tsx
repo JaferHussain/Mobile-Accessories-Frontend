@@ -35,12 +35,12 @@ function renderLine(product: Product = stocked) {
 const set = (label: RegExp, value: string) => fireEvent.change(screen.getByLabelText(label), { target: { value } });
 
 describe('a line on the bill', () => {
-  it('shows its total as cost times quantity, to the paisa', () => {
+  it('shows its total as cost times quantity', () => {
     renderLine();
-    set(/cost per unit/i, '12.35');
+    set(/cost per unit/i, '12');
     set(/^quantity/i, '3');
 
-    expect(screen.getByTestId('purchase-total')).toHaveTextContent('Rs 37.05');
+    expect(screen.getByTestId('purchase-total')).toHaveTextContent('Rs 36.00');
   });
 
   it('starts at the cost and prices the shop already has', () => {
@@ -77,6 +77,7 @@ describe('a line on the bill', () => {
     ['0', '1', /cost must be greater than zero/i],
     ['800', '0', /whole number greater than zero/i],
     ['800', '1.5', /whole number greater than zero/i],
+    ['800.50', '1', /whole rupees/i],
   ])('refuses cost %s and quantity %s', async (cost, quantity, message) => {
     const user = userEvent.setup();
     const onAdd = renderLine();
@@ -86,6 +87,22 @@ describe('a line on the bill', () => {
     await user.click(screen.getByRole('button', { name: /add to bill/i }));
 
     expect(screen.getByText(message)).toBeInTheDocument();
+    expect(onAdd).not.toHaveBeenCalled();
+  });
+});
+
+describe('whole rupees', () => {
+  it.each([
+    [/retail price/i, '1099.50'],
+    [/wholesale price/i, '949.75'],
+  ])('refuses paisa in the %s', async (label, value) => {
+    const user = userEvent.setup();
+    const onAdd = renderLine();
+
+    set(label, value);
+    await user.click(screen.getByRole('button', { name: /add to bill/i }));
+
+    expect(screen.getByText(/whole rupees/i)).toBeInTheDocument();
     expect(onAdd).not.toHaveBeenCalled();
   });
 });

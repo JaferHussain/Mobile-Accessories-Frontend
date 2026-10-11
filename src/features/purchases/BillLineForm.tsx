@@ -31,6 +31,8 @@ export interface BillLineFormProps {
  *
  * <p>Nothing is saved here — the line joins the bill, and the whole bill is saved at once.</p>
  */
+const WHOLE_RUPEES = 'Enter whole rupees — no paisa.';
+
 export function BillLineForm({ product, initial, onAdd, onCancel }: BillLineFormProps) {
   const currentCost = product.costPrice ?? 0;
   // A product with no selling price has never had a delivery, and this one has to state a price.
@@ -48,8 +50,11 @@ export function BillLineForm({ product, initial, onAdd, onCancel }: BillLineForm
   function validate(): boolean {
     const next: Record<string, string> = {};
 
+    // Every price is whole rupees — the owner's rule, and the server refuses paisa too.
     if (!Number.isFinite(unitCost) || unitCost <= 0) {
       next.unitCost = 'Purchase cost must be greater than zero.';
+    } else if (!Number.isInteger(unitCost)) {
+      next.unitCost = WHOLE_RUPEES;
     }
 
     if (!Number.isInteger(quantity) || quantity <= 0) {
@@ -58,6 +63,8 @@ export function BillLineForm({ product, initial, onAdd, onCancel }: BillLineForm
 
     if (!Number.isFinite(retailPrice) || retailPrice < 0) {
       next.retailPrice = 'Retail price cannot be negative.';
+    } else if (!Number.isInteger(retailPrice)) {
+      next.retailPrice = WHOLE_RUPEES;
     } else if (isFirstStocking && retailPrice <= 0) {
       // Mirrors the server: stocking without pricing would put units on the shelf at zero.
       next.retailPrice = 'Set the retail price — it is what makes this product sellable.';
@@ -65,6 +72,8 @@ export function BillLineForm({ product, initial, onAdd, onCancel }: BillLineForm
 
     if (!Number.isFinite(wholesalePrice) || wholesalePrice < 0) {
       next.wholesalePrice = 'Wholesale price cannot be negative.';
+    } else if (!Number.isInteger(wholesalePrice)) {
+      next.wholesalePrice = WHOLE_RUPEES;
     }
 
     setErrors(next);
@@ -89,7 +98,7 @@ export function BillLineForm({ product, initial, onAdd, onCancel }: BillLineForm
           <input
             id="unitCost"
             type="number"
-            step="0.01"
+            step="1"
             min="0"
             value={String(unitCost)}
             onChange={(event) => setUnitCost(Number(event.target.value))}
@@ -117,7 +126,7 @@ export function BillLineForm({ product, initial, onAdd, onCancel }: BillLineForm
           <input
             id="retailPrice"
             type="number"
-            step="0.01"
+            step="1"
             min="0"
             value={String(retailPrice)}
             onChange={(event) => setRetailPrice(Number(event.target.value))}
@@ -132,7 +141,7 @@ export function BillLineForm({ product, initial, onAdd, onCancel }: BillLineForm
           <input
             id="wholesalePrice"
             type="number"
-            step="0.01"
+            step="1"
             min="0"
             value={String(wholesalePrice)}
             onChange={(event) => setWholesalePrice(Number(event.target.value))}

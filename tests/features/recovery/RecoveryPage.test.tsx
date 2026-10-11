@@ -127,7 +127,7 @@ describe('the recovery page', () => {
   });
 
   it.each([
-    ['Udhaar customers', [7, 11], [9]],
+    ['Full udhaar', [7, 11], [9]],
     ['Part paid', [7, 9], [11]],
     ['Overdue', [7], [9, 11]],
   ])('filters to %s', async (label, shown, hidden) => {
@@ -139,6 +139,33 @@ describe('the recovery page', () => {
 
     shown.forEach((id) => expect(screen.getByTestId(`recovery-${id}`)).toBeInTheDocument());
     hidden.forEach((id) => expect(screen.queryByTestId(`recovery-${id}`)).not.toBeInTheDocument());
+  });
+
+  it('shows only the full-udhaar bills under Full udhaar, and only the part-paid ones under Part paid', async () => {
+    // Rehman owes one bill taken wholly on udhaar (3,000) and one paid in part (1,200 left).
+    const user = userEvent.setup();
+    renderPage();
+
+    await screen.findByTestId('recovery-7');
+
+    await user.click(screen.getByRole('button', { name: 'Full udhaar' }));
+    const udhaarBills = within(card(7)).getByRole('table', { name: /open bills of rehman mobiles/i });
+    expect(within(udhaarBills).getByText('INV-2026-000150')).toBeInTheDocument();
+    expect(within(udhaarBills).queryByText('INV-2026-000101')).not.toBeInTheDocument();
+    expect(screen.getByTestId('recovery-amount-7')).toHaveTextContent('Rs 3,000.00');
+    expect(card(7)).toHaveTextContent(/on full udhaar · Rs 4,200.00 owed in all/);
+    expect(screen.getByTestId('recovery-summary')).toHaveTextContent('2 customers · Rs 5,000.00 on full udhaar');
+
+    await user.click(screen.getByRole('button', { name: 'Part paid' }));
+    const partBills = within(card(7)).getByRole('table', { name: /open bills of rehman mobiles/i });
+    expect(within(partBills).getByText('INV-2026-000101')).toBeInTheDocument();
+    expect(within(partBills).queryByText('INV-2026-000150')).not.toBeInTheDocument();
+    expect(screen.getByTestId('recovery-amount-7')).toHaveTextContent('Rs 1,200.00');
+    expect(screen.getByTestId('recovery-summary')).toHaveTextContent('2 customers · Rs 1,800.00 on part-paid bills');
+
+    await user.click(screen.getByRole('button', { name: 'All' }));
+    expect(screen.getByTestId('recovery-amount-7')).toHaveTextContent('Rs 4,200.00');
+    expect(screen.queryByTestId('recovery-summary')).not.toBeInTheDocument();
   });
 
   it('finds someone by name or phone', async () => {

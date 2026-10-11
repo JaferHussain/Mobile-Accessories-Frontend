@@ -15,6 +15,7 @@ vi.mock('@/features/udhaar/udhaarApi', () => ({
     register: vi.fn(),
     registerExisting: vi.fn(),
     remove: vi.fn(),
+    update: vi.fn(),
     idCard: vi.fn(),
   },
 }));
@@ -59,6 +60,79 @@ beforeEach(() => {
   // jsdom has no object URLs; a preview needs one.
   URL.createObjectURL = vi.fn(() => 'blob:preview');
   URL.revokeObjectURL = vi.fn();
+});
+
+describe('editing a registered udhaar customer', () => {
+  it('opens with their details filled in and saves a corrected name and phone, keeping the card', async () => {
+    const user = userEvent.setup();
+    vi.mocked(udhaarApi.update).mockResolvedValue({ ...rehman, name: 'Rehman Mobiles & Co', mobileNumber: '03219876543' });
+    wrap(<UdhaarCustomersPage />);
+
+    await user.click(await screen.findByRole('button', { name: 'Edit Rehman Mobiles' }));
+
+    expect(screen.getByRole('heading', { name: 'Edit Rehman Mobiles' })).toBeInTheDocument();
+    expect(screen.getByLabelText(/^name$/i)).toHaveValue('Rehman Mobiles');
+    expect(screen.getByLabelText(/phone number/i)).toHaveValue('03001234567');
+
+    await user.clear(screen.getByLabelText(/^name$/i));
+    await user.type(screen.getByLabelText(/^name$/i), 'Rehman Mobiles & Co');
+    await user.clear(screen.getByLabelText(/phone number/i));
+    await user.type(screen.getByLabelText(/phone number/i), '03219876543');
+    await user.click(screen.getByRole('button', { name: /save changes/i }));
+
+    await waitFor(() =>
+      expect(udhaarApi.update).toHaveBeenCalledWith(7, {
+        name: 'Rehman Mobiles & Co',
+        mobileNumber: '03219876543',
+        idCardFront: null,
+        idCardBack: null,
+      }),
+    );
+    expect(await screen.findByText(/Rehman Mobiles & Co's details are saved/i)).toBeInTheDocument();
+  });
+
+  it('replaces one side of the card only when a new photo is chosen', async () => {
+    const user = userEvent.setup();
+    vi.mocked(udhaarApi.update).mockResolvedValue(rehman);
+    wrap(<UdhaarCustomersPage />);
+
+    await user.click(await screen.findByRole('button', { name: 'Edit Rehman Mobiles' }));
+    await user.upload(screen.getByLabelText(/id card — front/i), photo('new-front.jpg'));
+    await user.click(screen.getByRole('button', { name: /save changes/i }));
+
+    await waitFor(() =>
+      expect(udhaarApi.update).toHaveBeenCalledWith(7, expect.objectContaining({ idCardBack: null })),
+    );
+    const sent = vi.mocked(udhaarApi.update).mock.calls[0]![1];
+    expect(sent.idCardFront?.name).toBe('new-front.jpg');
+  });
+
+  it('will not save without a name or a phone number', async () => {
+    const user = userEvent.setup();
+    wrap(<UdhaarCustomersPage />);
+
+    await user.click(await screen.findByRole('button', { name: 'Edit Rehman Mobiles' }));
+    await user.clear(screen.getByLabelText(/^name$/i));
+    await user.click(screen.getByRole('button', { name: /save changes/i }));
+
+    expect(await screen.findByText(/enter the customer's name/i)).toBeInTheDocument();
+    expect(udhaarApi.update).not.toHaveBeenCalled();
+  });
+
+  it('shows the server refusal and keeps the form open', async () => {
+    const user = userEvent.setup();
+    const { ApiError } = await import('@/types/api');
+    vi.mocked(udhaarApi.update).mockRejectedValue(
+      new ApiError('BUSINESS_RULE_VIOLATION', 'The name is at most 150 characters and the phone number at most 20.', 422),
+    );
+    wrap(<UdhaarCustomersPage />);
+
+    await user.click(await screen.findByRole('button', { name: 'Edit Rehman Mobiles' }));
+    await user.click(screen.getByRole('button', { name: /save changes/i }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/at most 20/);
+    expect(screen.getByRole('heading', { name: 'Edit Rehman Mobiles' })).toBeInTheDocument();
+  });
 });
 
 describe('the udhaar customers page', () => {
@@ -191,6 +265,33 @@ describe('a customer’s udhaar standing, on their ledger', () => {
     await user.click(screen.getByRole('button', { name: /remove from udhaar/i }));
 
     await waitFor(() => expect(udhaarApi.remove).toHaveBeenCalledWith(7));
+  });
+
+  it("edits an udhaar customer's details from their own page", async () => {
+    const user = userEvent.setup();
+    vi.mocked(udhaarApi.status).mockResolvedValue(rehman);
+    vi.mocked(udhaarApi.update).mockResolvedValue({ ...rehman, mobileNumber: '03219876543' });
+    wrap(<UdhaarStatusPanel customerId={7} />);
+
+    await user.click(await screen.findByRole('button', { name: /edit details/i }));
+
+    expect(screen.getByRole('heading', { name: 'Edit Rehman Mobiles' })).toBeInTheDocument();
+    await user.clear(screen.getByLabelText(/phone number/i));
+    await user.type(screen.getByLabelText(/phone number/i), '03219876543');
+    await user.click(screen.getByRole('button', { name: /save changes/i }));
+
+    await waitFor(() =>
+      expect(udhaarApi.update).toHaveBeenCalledWith(7, expect.objectContaining({ name: 'Rehman Mobiles', mobileNumber: '03219876543' })),
+    );
+    expect(await screen.findByText(/details are saved/i)).toBeInTheDocument();
+  });
+
+  it('offers no edit to someone who is not an udhaar customer', async () => {
+    vi.mocked(udhaarApi.status).mockResolvedValue({ ...rehman, isUdhaarCustomer: false });
+    wrap(<UdhaarStatusPanel customerId={7} />);
+
+    expect(await screen.findByRole('button', { name: /make udhaar customer/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /edit details/i })).not.toBeInTheDocument();
   });
 
   it('prompts to complete the ID card of someone marked without one', async () => {

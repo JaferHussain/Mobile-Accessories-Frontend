@@ -57,6 +57,32 @@ describe('Dashboard KPIs', () => {
     expect(screen.getByTestId('kpi-wholesale-sales')).toHaveTextContent('Rs 0.00');
   });
 
+  it('shows how many items are on the shelf, ready to sell', () => {
+    render(
+      <Dashboard
+        data={{ ...data, shopStock: { unitsInShop: 1240, productsInStock: 86, unitsWithSalesmen: 35 } }}
+        period="Today"
+        onPeriodChange={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByTestId('kpi-shop-stock')).toHaveTextContent('1,240 items');
+    expect(screen.getByTestId('kpi-shop-stock-note')).toHaveTextContent('86 products in stock · 35 more with salesmen');
+  });
+
+  it('flags an empty shelf, and says nothing of salesmen when none carry stock', () => {
+    render(
+      <Dashboard
+        data={{ ...data, shopStock: { unitsInShop: 0, productsInStock: 0, unitsWithSalesmen: 0 } }}
+        period="Today"
+        onPeriodChange={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByTestId('kpi-shop-stock')).toHaveTextContent('0 items');
+    expect(screen.getByTestId('kpi-shop-stock-note')).toHaveTextContent(/^0 products in stock$/);
+  });
+
   it('shows every headline figure', () => {
     render(<Dashboard data={data} period="Today" onPeriodChange={vi.fn()} />);
 

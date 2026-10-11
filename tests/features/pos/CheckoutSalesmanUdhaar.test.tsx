@@ -49,7 +49,7 @@ describe('a field salesman at checkout', () => {
     await user.click(screen.getByRole('button', { name: /^find$/i }));
     await user.click(within(await screen.findByTestId('customer-option-5')).getByRole('button', { name: /select/i }));
 
-    await user.click(screen.getByRole('radio', { name: /credit \(udhaar\)/i }));
+    await user.click(screen.getByRole('radio', { name: /full udhaar \(credit\)/i }));
     await user.click(screen.getByRole('button', { name: /complete sale/i }));
 
     await waitFor(() =>

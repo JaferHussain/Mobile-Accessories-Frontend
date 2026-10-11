@@ -57,6 +57,20 @@ cd ../backend && dotnet test            # and so must the backend
   put the whole bill on udhaar. `amountPaid` is derived, never typed twice. Account number and transaction ID
   appear only for a transfer method. Keep **Raast** in `PAYMENT_METHODS`. `handleConfirm`
   re-throws so a refused sale keeps the modal open with the cart intact.
+- **Discount is on the whole bill only** (the owner's rule): the cart has no per-item Discount
+  column, every line is sent with `lineDiscount: 0`, and a cart restored from storage has any old
+  line discount zeroed (`readStoredCart`). The server still accepts a line discount; no screen sends one.
+- **An udhaar customer is asked first: "Pay part now" or "Full udhaar (credit)"** — both start
+  unanswered, and only the options the person may give are shown (the counter shopkeeper sees part
+  only). **Pay part now** then asks **Paid by** (Cash, Bank transfer, JazzCash, EasyPaisa, Raast —
+  unanswered) and the amount. A cash part is saved as `Partial`; a transfer part is saved under that
+  transfer (`JazzCash`…) with `amountPaid` below the total, so day close leaves it out of the drawer
+  and it can carry its screenshot. The server already allowed this — the money, not the label,
+  decides credit.
+- **A retail sale to a walk-in is not asked how it was paid** (`CheckoutModal`, `saleType` prop): it
+  is cash, paid in full — no method, no transfer, no part payment. A **wholesale** walk-in, and any
+  **udhaar customer**, are asked as before. The method is worked out from the choice, never copied
+  into state, so switching back to a retail walk-in always lands on cash.
 - **Saving clears the cart but keeps the receipt**, until **New sale** is pressed.
 - **Switching the sale type re-reads the cards on screen** (`changeSaleType` re-runs the search
   behind them), not only the cart. Pressing Add on a card fetched before the switch put the item in
@@ -93,6 +107,11 @@ cd ../backend && dotnet test            # and so must the backend
 - **Test the attach through the real `proofApi` object** (`vi.spyOn(proofApi, 'attach')`). Mocking
   the module's export replaces only the import; the shared helper inside the module still calls the
   original, so the mock never sees the upload.
+- **"Refunded by" lists Cash and the shop's registered accounts** (`shopAccountApi.choices`, open to
+  staff): "HBL Current · 8989 — Bank transfer", "HBL Current · 8989 — Raast", "JazzCash 0300 —
+  JazzCash". A bank account is offered twice (bank transfer and Raast — `methodsFor`); a wallet only
+  as itself. The choice is `account:<id>:<method>`, and the id is sent as `refundShopAccountId`.
+  Showing the shop's account numbers to staff here is the owner's decision. With no accounts registered, the plain transfer methods are offered instead.
 - **A transfer refund asks for the customer's account number and transaction ID** as soon as a
   transfer is chosen (`SaleReturnForm`, both optional; never for cash), and the return history shows them.
 - **Refunded by** (sale return) and **Paid by** (bank expense) start unanswered, like Paid from:
@@ -125,8 +144,8 @@ cd ../backend && dotnet test            # and so must the backend
 ## The dashboard (`/dashboard`, Admin only)
 
 - **One layout, scoped by chips** (`DashboardPage` → `LensChips`): **Everyone**, a chip per person,
-  and **Money**. Each chip counts what is worth a look. What is worth a look (`AttentionStrip`) comes
-  BEFORE the figures. Built entirely from endpoints that already existed — `/dashboard` (shop totals,
+  and **Money**. Each chip carries a red count of what is worth a look (the list itself is on Team). There is
+  deliberately no "to look at" strip on the page — the owner asked for it removed. Built entirely from endpoints that already existed — `/dashboard` (shop totals,
   shown unchanged by `Dashboard` with `showHeader={false}`), `/team` + `/team/watchlist` (people),
   and for Money the day-close preview, expenses, suppliers and receivables. **The page works out no
   figure of its own.**
@@ -172,6 +191,17 @@ cd ../backend && dotnet test            # and so must the backend
   two, and the stock list, are never requested for the counter shopkeeper, and `/recovery` is never
   requested for the salesman. `/` still lands on the counter for everyone.
 
+- **The field salesman lands on My day** (`HomeRedirect` in `AppRoutes`: `/` → `/my-day` for
+  `job === 'FieldSales'`, `/pos` for everyone else). His My day shows **Products given to me** (what
+  he carries, at the shop's retail price, with value) and **What I sold** (per product, net of
+  returns, after the bill discount, with a total) — `MyProductsPanels`, from `GET /api/my-products`.
+  Retail price only: wholesale and cost never reach Staff.
+
+- **My day shows online sales apart from cash** (`MyPaymentsCard`, from `MyDay.payments` on
+  `GET /api/my-day`): **Cash** (Cash + a part paid in cash) against **Online** (each transfer method on
+  its own), counting only what came in at the sale — full udhaar is not a payment. Each online sale in
+  "What I did" carries an **Online** badge. Shown to all staff.
+
 ## Stock figures — each person reads what they can sell from
 
 `StockCount` (components) words the server's figures, and `sellableQuantity` picks the number that
@@ -182,11 +212,14 @@ the owned total on purpose — a purchase re-costs every owned unit, and reports
 owns.
 
 ## Udhaar customers
-- **Customer type** (`CustomerTypeToggle`, owner only, on a customer's page): Retail / Wholesale —
-  what the Customers screen's Wholesale filter reads. A wholesale sale sets it on its own (server).
+- **Customers have no retail/wholesale type on screen** (removed at the owner's request): no type
+  switch on a customer's page, no All/Retail/Wholesale filter, and the list's Type column says only
+  **Udhaar customer** or "—". Retail or wholesale is chosen **per sale at the counter**, for anyone —
+  an udhaar customer included. The server still stores `customers.sale_type`; nothing shows it.
 
 - **Udhaar customers** (`/udhaar-customers`, owner only, under Customers & bills): search, what each
-  owes, ID card **On file** / **ID card missing**, View ID card, Complete ID card, Remove.
+  owes, ID card **On file** / **ID card missing**, View ID card, **Edit** (name, phone, and a new
+  photo only to replace that side — `udhaarApi.update`), Complete ID card, Remove.
   **Register udhaar customer** asks for name, phone and both sides of the ID card (with previews),
   all required.
 - **On a customer's ledger** (`UdhaarStatusPanel`, owner only): an ordinary customer gets **Make
@@ -199,11 +232,16 @@ owns.
 ## Recovery
 
 - **Recovery** (`/recovery`, Customers & bills, everyone): totals first (owed, customers owing,
-  overdue), then All / Udhaar customers / Part paid / Overdue and a search, then a card per person —
+  overdue), then All / Full udhaar / Part paid / Overdue and a search, then a card per person —
   amount, owing since, due date, months overdue, **Receive payment** (the ledger's
   `ReceivePaymentModal`, then the receipt's share buttons), **Remind** (`ReminderButtons`), and the
   open bills, each Part paid or Not paid. Every figure is the server's; filtering and searching
   are the only things done here. Dates are read from their `yyyy-mm-dd` parts, never through `Date`.
+
+- **Full udhaar and Part paid filter BILLS, not customers** (`billsFor`): one customer can owe a bill
+  taken wholly on udhaar and another paid in part. Under each filter a card lists only those bills
+  (opened), leads with what THEY owe ("on full udhaar · Rs X owed in all"), and a line above the list
+  totals the filter. Keyed by customer and filter, so switching re-renders every card.
 
 ## Purchases — a supplier's bill
 
@@ -223,6 +261,16 @@ owns.
   (lines and payments, each payment's proof), and **Pay** while anything is owed — the modal
   starts at what is owed, never dates before the bill, and takes a screenshot for a transfer.
 - Every figure — total, paid, owed, status — is the server's.
+
+## The look — DreamsPOS theme
+
+The whole app wears the owner's chosen template, `template/sales-dashboard.html` (DreamsPOS):
+orange `#FE9F43` primary, navy `#092C4C` secondary, white sidebar with a soft-orange active pill,
+white cards with a hairline border and 8px corners, light-grey table headers, small solid badges,
+Nunito (loaded in `index.html`). It is **one block at the end of `index.css`** ("DreamsPOS theme"),
+which remaps the colour tokens (`--blue` now carries the orange accent, `--rail` the navy) and
+restyles existing selectors. **Presentation only** — no markup, class or behaviour changed; delete
+the block and the previous look returns. New styles should use the tokens, not literal colours.
 
 ## Traps
 

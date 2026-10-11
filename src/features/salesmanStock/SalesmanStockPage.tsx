@@ -1,3 +1,4 @@
+import { formatPkr } from '@/lib/money';
 import { useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -18,6 +19,8 @@ interface IssueLine {
   productId: number;
   name: string;
   quantity: number;
+  /** Rs promised on each unit he sells — on top of half above the shop's price. */
+  commissionPerUnit: number;
 }
 
 function errorText(caught: unknown, fallback: string): string {
@@ -62,7 +65,11 @@ export function SalesmanStockPage() {
     mutationFn: () =>
       salesmanStockApi.issue(
         userId,
-        lines.map((line) => ({ productId: line.productId, quantity: line.quantity })),
+        lines.map((line) => ({
+          productId: line.productId,
+          quantity: line.quantity,
+          commissionPerUnit: line.commissionPerUnit,
+        })),
         issueNote.trim() || null,
       ),
     onSuccess: async () => {
@@ -99,7 +106,16 @@ export function SalesmanStockPage() {
     setLines((current) =>
       current.some((line) => line.productId === product.id)
         ? current
-        : [...current, { productId: product.id, name: product.name, quantity: 1 }],
+        : [
+            ...current,
+            {
+              productId: product.id,
+              name: product.name,
+              quantity: 1,
+              // Starts at what he is already promised on it, so issuing more never quietly drops it.
+              commissionPerUnit: statement.data?.items.find((item) => item.productId === product.id)?.commissionPerUnit ?? 0,
+            },
+          ],
     );
   }
 
@@ -114,6 +130,11 @@ export function SalesmanStockPage() {
 
     if (lines.some((line) => !(line.quantity > 0))) {
       setIssueError('Each quantity must be more than zero.');
+      return;
+    }
+
+    if (lines.some((line) => !Number.isFinite(line.commissionPerUnit) || line.commissionPerUnit < 0)) {
+      setIssueError('A commission cannot be negative — leave it at 0 for none.');
       return;
     }
 
@@ -180,6 +201,7 @@ export function SalesmanStockPage() {
                       <tr>
                         <th scope="col">Product</th>
                         <th scope="col">With him</th>
+                        <th scope="col">Commission / unit</th>
                         <th scope="col">Brought back</th>
                       </tr>
                     </thead>
@@ -188,6 +210,9 @@ export function SalesmanStockPage() {
                         <tr key={item.productId}>
                           <td>{item.productName}</td>
                           <td className="numeric">{item.quantity}</td>
+                          <td className="numeric">
+                            {item.commissionPerUnit ? formatPkr(item.commissionPerUnit) : '—'}
+                          </td>
                           <td>
                             <input
                               type="number"
@@ -272,6 +297,26 @@ export function SalesmanStockPage() {
                             )
                           }
                         />
+                        <label htmlFor={`issueCommission${line.productId}`} className="stock-lines__commission">
+                          Commission / unit (Rs)
+                          <input
+                            id={`issueCommission${line.productId}`}
+                            type="number"
+                            min="0"
+                            step="1"
+                            inputMode="numeric"
+                            value={String(line.commissionPerUnit)}
+                            onChange={(event) =>
+                              setLines((current) =>
+                                current.map((existing) =>
+                                  existing.productId === line.productId
+                                    ? { ...existing, commissionPerUnit: Number(event.target.value) }
+                                    : existing,
+                                ),
+                              )
+                            }
+                          />
+                        </label>
                         <button
                           type="button"
                           onClick={() => setLines((current) => current.filter((existing) => existing.productId !== line.productId))}

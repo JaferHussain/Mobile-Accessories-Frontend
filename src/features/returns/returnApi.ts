@@ -55,6 +55,8 @@ export interface SaleReturnRow {
   /** The customer's account a transfer refund went to, and its transaction. */
   refundAccountNumber?: string | null;
   refundTransactionId?: string | null;
+  /** The shop's own account the refund was paid from. Null for cash. */
+  refundShopAccountName?: string | null;
   hasRefundProof: boolean;
   reason: string | null;
 }
@@ -150,6 +152,8 @@ export const returnApi = {
     refundMethod: PaymentMethod | null = null,
     /** Where a transfer refund went. Null for cash, which carries neither. */
     reference: { accountNumber: string | null; transactionId: string | null } | null = null,
+    /** The shop's own account a transfer refund was paid from. Null for cash. */
+    shopAccountId: number | null = null,
   ): Promise<SaleReturnResult> {
     return unwrap(
       api.post<ApiEnvelope<SaleReturnResult>>('/sale-returns', {
@@ -159,6 +163,7 @@ export const returnApi = {
         refundMethod,
         refundAccountNumber: reference?.accountNumber ?? null,
         refundTransactionId: reference?.transactionId ?? null,
+        refundShopAccountId: shopAccountId,
       }),
     );
   },

@@ -57,6 +57,9 @@ function renderPos(overrides: Partial<PosScreenProps> = {}) {
 
 /** Sells one item, settling with the given method, and returns once the receipt is shown. */
 async function sellWith(method: string) {
+  // A retail sale to a walk-in is cash and is not asked how it was paid — so a sale that needs a
+  // method chosen is a wholesale one.
+  await userEvent.click(screen.getByRole('radio', { name: /wholesale/i }));
   await userEvent.type(screen.getByLabelText(/scan or search/i), '8901234567890');
   await userEvent.keyboard('{Enter}');
   await screen.findByTestId('cart-line-1');

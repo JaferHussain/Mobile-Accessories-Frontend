@@ -51,7 +51,20 @@ export function accountLabel(account: ShopAccount): string {
   return account.accountNumber ? `${account.name} · ${account.accountNumber}` : account.name;
 }
 
+/**
+ * The ways money can leave this account — what a payment from it is recorded as. A bank account
+ * pays by bank transfer or by Raast; a wallet only as itself. Mirrors the server's ShopAccountRules.
+ */
+export function methodsFor(account: ShopAccount): PaymentMethod[] {
+  return account.accountType === 'Bank' ? ['BankTransfer', 'Raast'] : [account.accountType];
+}
+
 export const shopAccountApi = {
+  /** The shop's active accounts, as a payment form offers them. Open to staff — read-only. */
+  choices(): Promise<ShopAccount[]> {
+    return unwrap(api.get<ApiEnvelope<ShopAccount[]>>('/shop-accounts/choices'));
+  },
+
   list(includeInactive = false): Promise<ShopAccount[]> {
     return unwrap(api.get<ApiEnvelope<ShopAccount[]>>('/shop-accounts', { params: { includeInactive } }));
   },

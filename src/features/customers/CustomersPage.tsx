@@ -8,7 +8,6 @@ import { ReceivePaymentModal } from './ReceivePaymentModal';
 import { attachProofAfterSave, proofOutcomeText, type ProofOutcome } from '@/features/proofs/proofApi';
 import { OpeningBalanceForm } from './OpeningBalanceForm';
 import { UdhaarStatusPanel } from '@/features/udhaar/UdhaarStatusPanel';
-import { CustomerTypeToggle } from './CustomerTypeToggle';
 import { CustomerReturnsPanel } from './CustomerReturnsPanel';
 import { useAuth } from '@/features/auth/AuthContext';
 import { QueryState } from '@/components/QueryState';
@@ -124,8 +123,6 @@ function CustomerDetail({ customer, onBack }: { customer: Customer; onBack: () =
       {/* Make udhaar customer / the badge and ID card — the owner's only. */}
       {isAdmin && <UdhaarStatusPanel key={shown.id} customerId={shown.id} />}
 
-      {/* Retail or wholesale — what the Wholesale filter reads. The owner's; a wholesale sale also sets it. */}
-      {isAdmin && <CustomerTypeToggle key={`type-${shown.id}-${shown.saleType}`} customer={shown} />}
 
       {isAdmin && !isSettingOpening && (
         <button type="button" onClick={() => setIsSettingOpening(true)}>
@@ -187,24 +184,17 @@ function CustomerDetail({ customer, onBack }: { customer: Customer; onBack: () =
   );
 }
 
-const SALE_TYPE_FILTERS = ['All', 'Retail', 'Wholesale'] as const;
-type SaleTypeFilter = (typeof SALE_TYPE_FILTERS)[number];
-
 export function CustomersPage() {
   const [search, setSearch] = useState('');
   const [withBalanceOnly, setWithBalanceOnly] = useState(false);
-  // Alternatives, never additive (FR-092): one state, not two independent booleans that could
-  // both be true at once.
-  const [saleTypeFilter, setSaleTypeFilter] = useState<SaleTypeFilter>('All');
   const [selected, setSelected] = useState<Customer | null>(null);
 
   const { data, isPending, error } = useQuery({
-    queryKey: ['customers', search, withBalanceOnly, saleTypeFilter],
+    queryKey: ['customers', search, withBalanceOnly],
     queryFn: () =>
       customerApi.search({
         search: search || undefined,
         withBalanceOnly,
-        saleType: saleTypeFilter === 'All' ? undefined : saleTypeFilter,
       }),
   });
 
@@ -237,31 +227,13 @@ export function CustomersPage() {
           />
           Only those who owe
         </label>
-
-        {/* Alternatives, not checkboxes: retail and wholesale are never both selected. */}
-        <div className="view-toggle" role="group" aria-label="Sale type">
-          {SALE_TYPE_FILTERS.map((option) => (
-            <button
-              key={option}
-              type="button"
-              aria-pressed={saleTypeFilter === option}
-              onClick={() => setSaleTypeFilter(option)}
-            >
-              {option}
-            </button>
-          ))}
-        </div>
       </div>
 
       <QueryState
         isLoading={isPending}
         error={error}
         isEmpty={data?.items.length === 0}
-        emptyMessage={
-          saleTypeFilter === 'Retail'
-            ? 'No customers match that search. Retail walk-in sales paid in full are not stored as customers — see Reports → Retail vs wholesale for those.'
-            : 'No customers match that search.'
-        }
+        emptyMessage="No customers match that search."
       >
         <table className="data-table">
           <caption className="visually-hidden">Customers</caption>
@@ -281,10 +253,9 @@ export function CustomersPage() {
               <tr key={customer.id}>
                 <td>{customer.name}</td>
                 <td>{customer.mobileNumber ?? '—'}</td>
-                <td>
-                  {customer.saleType}
-                  {customer.creditAllowed && <span className="badge"> · udhaar customer</span>}
-                </td>
+                {/* Whether they may be sold to on full udhaar. Retail or wholesale is chosen for each
+                    sale at the counter, never fixed on the customer. */}
+                <td>{customer.creditAllowed ? <span className="badge badge--udhaar">Udhaar customer</span> : '—'}</td>
                 <td className={`numeric${customer.outstandingBalance > 0 ? ' owing' : ''}`}>
                   {formatPkr(customer.outstandingBalance)}
                 </td>

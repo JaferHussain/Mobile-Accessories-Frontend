@@ -9,15 +9,13 @@ import { ProofAttachment } from '@/features/proofs/ProofAttachment';
 import { ProofFileField } from '@/features/proofs/ProofFileField';
 import { attachProofAfterSave, needsProof, proofOutcomeText } from '@/features/proofs/proofApi';
 import { accountsFor, accountLabel, shopAccountApi } from '@/features/shopAccounts/shopAccountApi';
-import { purchaseBillApi, type PurchaseBillStatus, type PurchaseBillSummary } from './purchaseBillApi';
-
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-
-/** A `yyyy-mm-dd` shop day, read from its parts — never through Date, which would shift it to UTC. */
-export function billDay(isoDate: string): string {
-  const [year, month, date] = isoDate.split('-');
-  return `${Number(date)} ${MONTHS[Number(month) - 1]} ${year}`;
-}
+import {
+  purchaseBillApi,
+  type PurchaseBillStatus,
+  type PurchaseBillSummary,
+} from './purchaseBillApi';
+import { BillDetailDialog } from './BillDetailDialog';
+import { billDay } from './billDay';
 
 const STATUS: Record<PurchaseBillStatus, { label: string; badge: string }> = {
   Paid: { label: 'Paid', badge: 'badge--ok' },
@@ -25,11 +23,9 @@ const STATUS: Record<PurchaseBillStatus, { label: string; badge: string }> = {
   Unpaid: { label: 'Unpaid', badge: 'badge--out' },
 };
 
-const SUPPLIER_PAYMENT_METHODS = PAYMENT_METHODS.filter((method) => method.value !== 'Credit' && method.value !== 'Partial');
-
-function methodLabel(method: string): string {
-  return PAYMENT_METHODS.find((option) => option.value === method)?.label ?? method;
-}
+const SUPPLIER_PAYMENT_METHODS = PAYMENT_METHODS.filter(
+  (method) => method.value !== 'Credit' && method.value !== 'Partial',
+);
 
 /** Paying a bill later: never more than it still owes, never dated before it. */
 function PayBillModal({
@@ -50,7 +46,10 @@ function PayBillModal({
   const [proof, setProof] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const accounts = useQuery({ queryKey: ['shop-accounts', 'active'], queryFn: () => shopAccountApi.list() });
+  const accounts = useQuery({
+    queryKey: ['shop-accounts', 'active'],
+    queryFn: () => shopAccountApi.list(),
+  });
   const offeredAccounts = accountsFor(accounts.data ?? [], method);
 
   const pay = useMutation({
@@ -62,13 +61,23 @@ function PayBillModal({
         shopAccountId: needsProof(method) && shopAccountId !== '' ? shopAccountId : null,
         reference: reference.trim() || null,
       });
-      const outcome = await attachProofAfterSave('supplier-payment', result.paymentId, proof, method);
-      return `Paid ${formatPkr(amount)} on ${billDay(paidOn)}. ` +
-        (result.due > 0 ? `${formatPkr(result.due)} still owed on this bill.` : 'The bill is paid.') +
-        proofOutcomeText(outcome);
+      const outcome = await attachProofAfterSave(
+        'supplier-payment',
+        result.paymentId,
+        proof,
+        method,
+      );
+      return (
+        `Paid ${formatPkr(amount)} on ${billDay(paidOn)}. ` +
+        (result.due > 0
+          ? `${formatPkr(result.due)} still owed on this bill.`
+          : 'The bill is paid.') +
+        proofOutcomeText(outcome)
+      );
     },
     onSuccess: onPaid,
-    onError: (caught) => setError(caught instanceof ApiError ? caught.message : 'Could not record the payment.'),
+    onError: (caught) =>
+      setError(caught instanceof ApiError ? caught.message : 'Could not record the payment.'),
   });
 
   function submit() {
@@ -103,11 +112,22 @@ function PayBillModal({
 
         <div className="field">
           <label htmlFor="payBillAmount">Amount</label>
-          <input id="payBillAmount" type="number" min="0" step="0.01" value={String(amount)} onChange={(event) => setAmount(Number(event.target.value))} />
+          <input
+            id="payBillAmount"
+            type="number"
+            min="0"
+            step="0.01"
+            value={String(amount)}
+            onChange={(event) => setAmount(Number(event.target.value))}
+          />
         </div>
         <div className="field">
           <label htmlFor="payBillMethod">Paid by</label>
-          <select id="payBillMethod" value={method} onChange={(event) => setMethod(event.target.value as PaymentMethod | '')}>
+          <select
+            id="payBillMethod"
+            value={method}
+            onChange={(event) => setMethod(event.target.value as PaymentMethod | '')}
+          >
             <option value="">Choose…</option>
             {SUPPLIER_PAYMENT_METHODS.map((option) => (
               <option key={option.value} value={option.value}>
@@ -118,12 +138,25 @@ function PayBillModal({
         </div>
         <div className="field">
           <label htmlFor="payBillDate">Date paid</label>
-          <input id="payBillDate" type="date" min={bill.billDate} max={today} value={paidOn} onChange={(event) => setPaidOn(event.target.value)} />
+          <input
+            id="payBillDate"
+            type="date"
+            min={bill.billDate}
+            max={today}
+            value={paidOn}
+            onChange={(event) => setPaidOn(event.target.value)}
+          />
         </div>
         {needsProof(method) && offeredAccounts.length > 0 && (
           <div className="field">
             <label htmlFor="payBillAccount">From account</label>
-            <select id="payBillAccount" value={shopAccountId} onChange={(event) => setShopAccountId(event.target.value ? Number(event.target.value) : '')}>
+            <select
+              id="payBillAccount"
+              value={shopAccountId}
+              onChange={(event) =>
+                setShopAccountId(event.target.value ? Number(event.target.value) : '')
+              }
+            >
               <option value="">Not recorded</option>
               {offeredAccounts.map((account) => (
                 <option key={account.id} value={account.id}>
@@ -135,12 +168,22 @@ function PayBillModal({
         )}
         <div className="field">
           <label htmlFor="payBillReference">Reference</label>
-          <input id="payBillReference" maxLength={255} value={reference} onChange={(event) => setReference(event.target.value)} />
+          <input
+            id="payBillReference"
+            maxLength={255}
+            value={reference}
+            onChange={(event) => setReference(event.target.value)}
+          />
         </div>
         <ProofFileField id="payBillProof" method={method} onFile={setProof} />
 
         <div className="form-actions">
-          <button type="button" className="button--primary" disabled={pay.isPending} onClick={submit}>
+          <button
+            type="button"
+            className="button--primary"
+            disabled={pay.isPending}
+            onClick={submit}
+          >
             {pay.isPending ? 'Saving…' : 'Record payment'}
           </button>
           <button type="button" disabled={pay.isPending} onClick={onCancel}>
@@ -152,78 +195,6 @@ function PayBillModal({
   );
 }
 
-/** One bill opened: what came, and every payment made against it. */
-function BillDetail({ billId }: { billId: number }) {
-  const queryClient = useQueryClient();
-  const detail = useQuery({ queryKey: ['purchase-bill', billId], queryFn: () => purchaseBillApi.get(billId) });
-  const refresh = () => queryClient.invalidateQueries({ queryKey: ['purchase-bill', billId] });
-
-  return (
-    <QueryState isLoading={detail.isPending} error={detail.error}>
-      {detail.data && (
-        <div className="bill-detail">
-          <table className="data-table">
-            <caption className="visually-hidden">Items on the bill</caption>
-            <thead>
-              <tr>
-                <th scope="col">Product</th>
-                <th scope="col">Qty</th>
-                <th scope="col">Cost</th>
-                <th scope="col">Total</th>
-              </tr>
-            </thead>
-            <tbody>
-              {detail.data.lines.map((line) => (
-                <tr key={line.purchaseId}>
-                  <td>
-                    {line.productName}
-                    {line.returnedQty > 0 && <small className="field__hint"> · {line.returnedQty} sent back</small>}
-                  </td>
-                  <td className="numeric">{line.quantity}</td>
-                  <td className="numeric">{formatPkr(line.unitCost)}</td>
-                  <td className="numeric">{formatPkr(line.total)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-
-          {detail.data.payments.length > 0 && (
-            <table className="data-table">
-              <caption className="visually-hidden">Payments against the bill</caption>
-              <thead>
-                <tr>
-                  <th scope="col">Paid on</th>
-                  <th scope="col">Amount</th>
-                  <th scope="col">Paid by</th>
-                  <th scope="col">Reference</th>
-                  <th scope="col">Proof</th>
-                </tr>
-              </thead>
-              <tbody>
-                {detail.data.payments.map((payment) => (
-                  <tr key={payment.id}>
-                    <td>{billDay(payment.paidOn)}</td>
-                    <td className="numeric">{formatPkr(payment.amount)}</td>
-                    <td>{methodLabel(payment.paymentMethod)}</td>
-                    <td>{payment.note ?? '—'}</td>
-                    <td>
-                      {needsProof(payment.paymentMethod) ? (
-                        <ProofAttachment kind="supplier-payment" id={payment.id} hasProof={payment.hasProof} onAttached={() => void refresh()} />
-                      ) : (
-                        '—'
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-      )}
-    </QueryState>
-  );
-}
-
 /**
  * Every supplier bill, newest first: when, from whom, what it came to, what has been paid, what is
  * still owed — with the bill's photo, and Pay for anything outstanding. Every figure is the server's.
@@ -231,7 +202,7 @@ function BillDetail({ billId }: { billId: number }) {
 export function PurchaseBillsList() {
   const queryClient = useQueryClient();
   const bills = useQuery({ queryKey: ['purchase-bills'], queryFn: () => purchaseBillApi.list() });
-  const [open, setOpen] = useState<number | null>(null);
+  const [open, setOpen] = useState<PurchaseBillSummary | null>(null);
   const [paying, setPaying] = useState<PurchaseBillSummary | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -281,8 +252,7 @@ export function PurchaseBillsList() {
               <BillRow
                 key={bill.id}
                 bill={bill}
-                isOpen={open === bill.id}
-                onToggle={() => setOpen((current) => (current === bill.id ? null : bill.id))}
+                onDetails={() => setOpen(bill)}
                 onPay={() => {
                   setNotice(null);
                   setPaying(bill);
@@ -293,6 +263,20 @@ export function PurchaseBillsList() {
           </tbody>
         </table>
       </QueryState>
+
+      {open && (
+        <BillDetailDialog
+          bill={open}
+          onClose={() => setOpen(null)}
+          onPay={() => {
+            // One popup at a time: the Pay popup takes the bill's place.
+            setNotice(null);
+            setPaying(open);
+            setOpen(null);
+          }}
+          onChanged={() => void refresh()}
+        />
+      )}
 
       {paying && (
         <PayBillModal
@@ -311,53 +295,47 @@ export function PurchaseBillsList() {
 
 function BillRow({
   bill,
-  isOpen,
-  onToggle,
+  onDetails,
   onPay,
   onPhoto,
 }: {
   bill: PurchaseBillSummary;
-  isOpen: boolean;
-  onToggle: () => void;
+  onDetails: () => void;
   onPay: () => void;
   onPhoto: () => void;
 }) {
   const status = STATUS[bill.status];
 
   return (
-    <>
-      <tr data-testid={`bill-${bill.id}`}>
-        <td>{billDay(bill.billDate)}</td>
-        <td>{bill.supplierName}</td>
-        <td>{bill.billNumber ?? '—'}</td>
-        <td className="numeric">{bill.itemCount}</td>
-        <td className="numeric">{formatPkr(bill.total)}</td>
-        <td className="numeric">{formatPkr(bill.paid)}</td>
-        <td className={`numeric${bill.due > 0 ? ' owing' : ''}`}>{formatPkr(bill.due)}</td>
-        <td>
-          <span className={`badge ${status.badge}`}>{status.label}</span>
-        </td>
-        <td>
-          <ProofAttachment kind="purchase-bill" id={bill.id} hasProof={bill.hasBillImage} onAttached={onPhoto} />
-        </td>
-        <td className="row-actions">
-          <button type="button" className="link-button" aria-expanded={isOpen} onClick={onToggle}>
-            {isOpen ? 'Hide' : 'Details'}
+    <tr data-testid={`bill-${bill.id}`}>
+      <td>{billDay(bill.billDate)}</td>
+      <td>{bill.supplierName}</td>
+      <td>{bill.billNumber ?? '—'}</td>
+      <td className="numeric">{bill.itemCount}</td>
+      <td className="numeric">{formatPkr(bill.total)}</td>
+      <td className="numeric">{formatPkr(bill.paid)}</td>
+      <td className={`numeric${bill.due > 0 ? ' owing' : ''}`}>{formatPkr(bill.due)}</td>
+      <td>
+        <span className={`badge ${status.badge}`}>{status.label}</span>
+      </td>
+      <td>
+        <ProofAttachment
+          kind="purchase-bill"
+          id={bill.id}
+          hasProof={bill.hasBillImage}
+          onAttached={onPhoto}
+        />
+      </td>
+      <td className="row-actions">
+        <button type="button" className="link-button" aria-haspopup="dialog" onClick={onDetails}>
+          Details
+        </button>
+        {bill.due > 0 && (
+          <button type="button" className="button--primary" onClick={onPay}>
+            Pay
           </button>
-          {bill.due > 0 && (
-            <button type="button" className="button--primary" onClick={onPay}>
-              Pay
-            </button>
-          )}
-        </td>
-      </tr>
-      {isOpen && (
-        <tr className="bill-detail-row">
-          <td colSpan={10}>
-            <BillDetail billId={bill.id} />
-          </td>
-        </tr>
-      )}
-    </>
+        )}
+      </td>
+    </tr>
   );
 }

@@ -6,11 +6,14 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { SalesmanCashPage } from '@/features/salesmanCash/SalesmanCashPage';
 import { salesmanCashApi, type SalesmanCashStatement } from '@/features/salesmanCash/salesmanCashApi';
 import { proofApi } from '@/features/proofs/proofApi';
+import { commissionApi } from '@/features/commission/commissionApi';
 
 vi.mock('@/features/salesmanCash/salesmanCashApi', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/features/salesmanCash/salesmanCashApi')>()),
   salesmanCashApi: { statement: vi.fn(), mine: vi.fn(), receive: vi.fn() },
 }));
+
+vi.mock('@/features/commission/commissionApi', () => ({ commissionApi: { statement: vi.fn() } }));
 
 vi.mock('@/features/proofs/proofApi', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/features/proofs/proofApi')>()),
@@ -55,6 +58,10 @@ function renderPage() {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(salesmanCashApi.statement).mockResolvedValue(statement);
+  vi.mocked(commissionApi.statement).mockResolvedValue({
+    userId: 7, fullName: 'Ali', job: 'FieldSales', totalCommission: 450, earned: 300, pending: 150,
+    paidOut: 100, owed: 200, lines: [], payouts: [],
+  });
 });
 
 describe('the salesman’s cash', () => {
@@ -65,6 +72,15 @@ describe('the salesman’s cash', () => {
     expect(screen.getByTestId('collected')).toHaveTextContent('5,000');
     expect(screen.getByTestId('refunded')).toHaveTextContent('200');
     expect(screen.getByTestId('handed-over')).toHaveTextContent('1,800');
+  });
+
+  it('shows his commission beside his cash: earned, waiting, paid and owed to him', async () => {
+    renderPage();
+
+    expect(await screen.findByTestId('commission-earned')).toHaveTextContent('300');
+    expect(screen.getByTestId('commission-pending')).toHaveTextContent('150');
+    expect(screen.getByTestId('commission-owed')).toHaveTextContent('200');
+    expect(screen.getByRole('link', { name: /details and pay/i })).toHaveAttribute('href', '/commissions/7');
   });
 
   it('lists every movement of his cash', async () => {

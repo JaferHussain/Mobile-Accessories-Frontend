@@ -42,6 +42,12 @@ describe('cart storage', () => {
     expect(restored?.saleType).toBe('Retail');
   });
 
+  it('brings back a cart saved with a per-item discount without it — discount is on the whole bill only', () => {
+    writeStoredCart({ lines: [{ ...lines[0]!, lineDiscount: 150 }], saleType: 'Retail' }, morning);
+
+    expect(readStoredCart(afternoon)?.lines[0]?.lineDiscount).toBe(0);
+  });
+
   it('keeps the sale type, so a wholesale cart does not come back priced as retail', () => {
     writeStoredCart({ lines, saleType: 'Wholesale' }, morning);
 

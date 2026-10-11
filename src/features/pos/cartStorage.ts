@@ -99,7 +99,9 @@ export function readStoredCart(now: Date = new Date()): StoredCart | null {
     }
 
     return {
-      lines: envelope.lines,
+      // A cart saved before per-item discounts were removed comes back without one: the
+      // discount is given on the whole bill only.
+      lines: envelope.lines.map((line) => ({ ...line, lineDiscount: 0 })),
       saleType: envelope.saleType === 'Wholesale' ? 'Wholesale' : 'Retail',
     };
   } catch {

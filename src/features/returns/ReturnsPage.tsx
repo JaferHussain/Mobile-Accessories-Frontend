@@ -9,6 +9,8 @@ import { formatPkr } from '@/lib/money';
 import { QueryState } from '@/components/QueryState';
 import { PAYMENT_METHODS } from '@/features/pos/posApi';
 import { ProofAttachment } from '@/features/proofs/ProofAttachment';
+import { shopAccountApi } from '@/features/shopAccounts/shopAccountApi';
+import { useAuth } from '@/features/auth/AuthContext';
 import { needsProof } from '@/features/proofs/proofApi';
 import { attachProofAfterSave, proofOutcomeText } from '@/features/proofs/proofApi';
 
@@ -29,6 +31,9 @@ function methodLabel(method: string): string {
 
 function CustomerReturns() {
   const queryClient = useQueryClient();
+  // The server shows staff only their own sales; only the owner sees everyone's. The screen says so.
+  const { isAdmin } = useAuth();
+  const ownSalesOnly = !isAdmin;
   // The picked line IS the whole state: it already carries its invoice, its discount and what
   // each unit is worth back, so picking one needs no second lookup — and only the item the
   // shopkeeper searched for is offered, not the rest of that invoice.
@@ -46,6 +51,9 @@ function CustomerReturns() {
   // Narrow the history to one kind of sale, or to one customer — "who is bringing goods back".
   const [typeFilter, setTypeFilter] = useState<'All' | ReturnSaleType>('All');
   const [historySearch, setHistorySearch] = useState('');
+
+  // The shop's accounts a refund can be paid from — offered in "Refunded by".
+  const shopAccounts = useQuery({ queryKey: ['shop-accounts', 'choices'], queryFn: () => shopAccountApi.choices() });
 
   const history = useQuery({
     queryKey: ['sale-returns', typeFilter, historySearch],
@@ -110,8 +118,16 @@ function CustomerReturns() {
               discountPerUnit: invoice.discountPerUnit,
             },
           ]}
-          onSubmit={async (items, reason, refundMethod, proofFile, reference) => {
-            const result = await returnApi.recordSaleReturn(invoice.invoiceId, items, reason, refundMethod, reference);
+          shopAccounts={shopAccounts.data ?? []}
+          onSubmit={async (items, reason, refundMethod, proofFile, reference, shopAccountId) => {
+            const result = await returnApi.recordSaleReturn(
+              invoice.invoiceId,
+              items,
+              reason,
+              refundMethod,
+              reference,
+              shopAccountId,
+            );
             const proof = await attachProofAfterSave('refund', result.returnId, proofFile, refundMethod);
 
             // Names the exact product and its updated stock — "it worked" is not enough; the
@@ -149,6 +165,12 @@ function CustomerReturns() {
       {confirmation && (
         <p className="form-success" role="status">
           {confirmation}
+        </p>
+      )}
+
+      {ownSalesOnly && (
+        <p className="field__hint" data-testid="own-sales-only">
+          Only your own sales are shown — you can take back only what you sold.
         </p>
       )}
 
@@ -274,6 +296,7 @@ function CustomerReturns() {
                     <small className="field__hint">
                       {' '}
                       {methodLabel(row.refundMethod)}
+                      {row.refundShopAccountName && ` · from ${row.refundShopAccountName}`}
                       {row.refundAccountNumber && ` · to ${row.refundAccountNumber}`}
                       {row.refundTransactionId && ` · ${row.refundTransactionId}`}
                     </small>

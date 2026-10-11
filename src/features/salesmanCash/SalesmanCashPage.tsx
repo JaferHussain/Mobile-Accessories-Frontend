@@ -8,6 +8,7 @@ import { PAYMENT_METHODS, type PaymentMethod } from '@/features/pos/posApi';
 import { ProofAttachment } from '@/features/proofs/ProofAttachment';
 import { needsProof, proofApi } from '@/features/proofs/proofApi';
 import { salesmanCashApi, type SalesmanCashKind } from './salesmanCashApi';
+import { commissionApi } from '@/features/commission/commissionApi';
 
 /** The real ways money can reach the shop from him. */
 const HANDOVER_METHODS = PAYMENT_METHODS.filter((method) => method.value !== 'Credit' && method.value !== 'Partial');
@@ -29,6 +30,12 @@ const KIND_LABELS: Record<SalesmanCashKind, string> = {
 export function SalesmanCashPage() {
   const userId = Number(useParams().userId);
   const queryClient = useQueryClient();
+
+  // His commission beside his cash: what he has earned on what he sold, and what is still owed to him.
+  const commission = useQuery({
+    queryKey: ['commission', userId],
+    queryFn: () => commissionApi.statement(userId),
+  });
 
   const statement = useQuery({
     queryKey: ['salesman-cash', userId],
@@ -139,6 +146,34 @@ export function SalesmanCashPage() {
                 {formatPkr(data.inHand)}
               </dd>
             </dl>
+
+            {commission.data && (
+              <section className="salesman-commission" aria-labelledby="salesman-commission-heading">
+                <header className="salesman-commission__head">
+                  <h3 id="salesman-commission-heading">His commission</h3>
+                  <Link to={`/commissions/${userId}`}>Details and pay →</Link>
+                </header>
+                <dl className="ledger__summary">
+                  <dt>Earned</dt>
+                  <dd data-testid="commission-earned">{formatPkr(commission.data.earned)}</dd>
+
+                  <dt>Waiting for udhaar</dt>
+                  <dd data-testid="commission-pending">{formatPkr(commission.data.pending)}</dd>
+
+                  <dt>Paid to him</dt>
+                  <dd>{formatPkr(commission.data.paidOut)}</dd>
+
+                  <dt>Owed to him</dt>
+                  <dd data-testid="commission-owed" className={commission.data.owed > 0 ? 'ledger__owing' : undefined}>
+                    {formatPkr(commission.data.owed)}
+                  </dd>
+                </dl>
+                <small className="field__hint">
+                  Half of what he sells above the shop's price, plus the amount you set per unit when you gave him the goods.
+                  Earned once the customer has paid.
+                </small>
+              </section>
+            )}
 
             {notice && (
               <p className="form-success" role="status">

@@ -26,6 +26,14 @@ export interface NewUdhaarCustomer {
   idCardBack: File;
 }
 
+/** Editing a registered udhaar customer. A photo is sent only to replace that side of the card. */
+export interface UdhaarCustomerEdit {
+  name: string;
+  mobileNumber: string;
+  idCardFront?: File | null;
+  idCardBack?: File | null;
+}
+
 /** For an existing customer: a side already on file need not be sent again. */
 export interface UdhaarRegistration {
   mobileNumber?: string | null;
@@ -62,6 +70,11 @@ export const udhaarApi = {
     return unwrap(
       api.post<ApiEnvelope<UdhaarCustomer>>(`/udhaar-customers/${customerId}/register`, form({ ...registration })),
     );
+  },
+
+  /** Corrects name and phone, and replaces a side of the ID card when a photo is given. Owner only. */
+  update(customerId: number, edit: UdhaarCustomerEdit): Promise<UdhaarCustomer> {
+    return unwrap(api.put<ApiEnvelope<UdhaarCustomer>>(`/udhaar-customers/${customerId}`, form({ ...edit })));
   },
 
   /** Takes the mark away. What they owe is untouched; the ID card is kept as evidence. */

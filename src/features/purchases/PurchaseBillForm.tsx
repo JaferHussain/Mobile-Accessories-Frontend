@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ApiError } from '@/types/api';
 import { formatPkr, roundMoney } from '@/lib/money';
@@ -73,18 +73,20 @@ export function PurchaseBillForm({ suppliers, onSubmit }: PurchaseBillFormProps)
   // The server refuses a search made only of one-letter words; never send one.
   const searchTooShort = isTooShortSearch(productSearch);
 
-  useEffect(() => {
-    if (!searchTooShort) {
-      setAppliedSearch(productSearch);
+  // What is typed, and what is searched for: a too-short search keeps the last real one standing.
+  function changeSearch(value: string) {
+    setProductSearch(value);
+
+    if (!isTooShortSearch(value)) {
+      setAppliedSearch(value);
     }
-  }, [productSearch, searchTooShort]);
+  }
 
   // A payment cannot predate the bill: moving the bill later carries the payment date with it.
-  useEffect(() => {
-    if (paidOn < billDate) {
-      setPaidOn(billDate);
-    }
-  }, [billDate, paidOn]);
+  function changeBillDate(value: string) {
+    setBillDate(value);
+    setPaidOn((current) => (current < value ? value : current));
+  }
 
   const products = useQuery({
     queryKey: ['products', appliedSearch],
@@ -124,7 +126,7 @@ export function PurchaseBillForm({ suppliers, onSubmit }: PurchaseBillFormProps)
       return [...others, line];
     });
     setEditing(null);
-    setProductSearch('');
+    changeSearch('');
   }
 
   function validate(): string | null {
@@ -235,7 +237,7 @@ export function PurchaseBillForm({ suppliers, onSubmit }: PurchaseBillFormProps)
             </div>
             <div className="field">
               <label htmlFor="billDate">Bill date</label>
-              <input id="billDate" type="date" max={today} value={billDate} onChange={(event) => setBillDate(event.target.value)} />
+              <input id="billDate" type="date" max={today} value={billDate} onChange={(event) => changeBillDate(event.target.value)} />
             </div>
             <div className="field">
               <label htmlFor="billNumber">Supplier&apos;s bill no.</label>
@@ -326,7 +328,7 @@ export function PurchaseBillForm({ suppliers, onSubmit }: PurchaseBillFormProps)
                 id="purchaseProductSearch"
                 value={productSearch}
                 placeholder="Search by name, brand or barcode"
-                onChange={(event) => setProductSearch(event.target.value)}
+                onChange={(event) => changeSearch(event.target.value)}
               />
               {searchTooShort && <small className="field__hint">Type at least 2 letters to search.</small>}
             </div>

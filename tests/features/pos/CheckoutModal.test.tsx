@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { CheckoutModal } from '@/features/pos/CheckoutModal';
 import type { CustomerSummary } from '@/features/pos/posApi';
@@ -47,7 +47,9 @@ const complete = (user: ReturnType<typeof userEvent.setup>) =>
 const choosePayment = (user: ReturnType<typeof userEvent.setup>, label: RegExp) =>
   user.click(screen.getByRole('radio', { name: label }));
 
-const FULL_UDHAAR = /credit \(udhaar\)/i;
+// An udhaar customer is asked first: pay part now, or full udhaar (credit).
+const FULL_UDHAAR = /full udhaar \(credit\)/i;
+const PART_NOW = /pay part now/i;
 const PART_PAID = /part paid/i;
 
 async function chooseBilal(user: ReturnType<typeof userEvent.setup>) {
@@ -87,6 +89,7 @@ describe('CheckoutModal customer', () => {
 
     await chooseBilal(user);
     expect(onSearchCustomers).toHaveBeenCalledWith('bilal');
+    await choosePayment(user, FULL_UDHAAR);
     await complete(user);
 
     await waitFor(() => expect(onConfirm).toHaveBeenCalledWith(expect.objectContaining({ customerId: bilal.id })));
@@ -173,8 +176,8 @@ describe('CheckoutModal payment', () => {
     expect(screen.queryByLabelText(/paid now/i)).not.toBeInTheDocument();
 
     await choosePayment(user, PART_PAID);
-    await user.clear(screen.getByLabelText(/paid now/i));
-    await user.type(screen.getByLabelText(/paid now/i), '1500');
+    await user.clear(screen.getByLabelText('Paid now'));
+    await user.type(screen.getByLabelText('Paid now'), '1500');
 
     expect(screen.getByTestId('checkout-remaining')).toHaveTextContent('Rs 700.00');
   });
@@ -184,8 +187,8 @@ describe('CheckoutModal payment', () => {
     const { onConfirm } = setup();
 
     await choosePayment(user, PART_PAID);
-    await user.clear(screen.getByLabelText(/paid now/i));
-    await user.type(screen.getByLabelText(/paid now/i), '2200');
+    await user.clear(screen.getByLabelText('Paid now'));
+    await user.type(screen.getByLabelText('Paid now'), '2200');
     await complete(user);
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/less than the total/i);
@@ -234,8 +237,8 @@ describe('CheckoutModal walk-in part payment', () => {
     const { onCreateCustomer, onConfirm } = setup();
 
     await choosePayment(user, PART_PAID);
-    await user.clear(screen.getByLabelText(/paid now/i));
-    await user.type(screen.getByLabelText(/paid now/i), '1000');
+    await user.clear(screen.getByLabelText('Paid now'));
+    await user.type(screen.getByLabelText('Paid now'), '1000');
     await user.type(screen.getByLabelText(/customer name/i), 'Asif');
     await user.type(screen.getByLabelText(/phone number/i), '03211234567');
     await complete(user);
@@ -253,8 +256,8 @@ describe('CheckoutModal walk-in part payment', () => {
     const { onConfirm, onCreateCustomer } = setup();
 
     await choosePayment(user, PART_PAID);
-    await user.clear(screen.getByLabelText(/paid now/i));
-    await user.type(screen.getByLabelText(/paid now/i), '1000');
+    await user.clear(screen.getByLabelText('Paid now'));
+    await user.type(screen.getByLabelText('Paid now'), '1000');
     await user.type(screen.getByLabelText(/customer name/i), 'Asif');
     await complete(user);
 
@@ -280,8 +283,8 @@ describe('CheckoutModal — the shopkeeper at the counter', () => {
     const { onCreateCustomer, onConfirm } = setup({ canSellOnCredit: false, canTakePartPayment: true });
 
     await choosePayment(user, PART_PAID);
-    await user.clear(screen.getByLabelText(/paid now/i));
-    await user.type(screen.getByLabelText(/paid now/i), '1000');
+    await user.clear(screen.getByLabelText('Paid now'));
+    await user.type(screen.getByLabelText('Paid now'), '1000');
     await user.type(screen.getByLabelText(/customer name/i), 'Asif');
     await user.type(screen.getByLabelText(/phone number/i), '03211234567');
     await complete(user);
@@ -298,7 +301,7 @@ describe('CheckoutModal — the shopkeeper at the counter', () => {
 
     await chooseBilal(user);
 
-    expect(screen.getByRole('radio', { name: PART_PAID })).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: PART_NOW })).toBeInTheDocument();
     expect(screen.queryByRole('radio', { name: FULL_UDHAAR })).not.toBeInTheDocument();
     expect(screen.getByText(/only the owner can put the whole bill on udhaar/i)).toBeInTheDocument();
   });
@@ -324,3 +327,147 @@ describe('CheckoutModal closing', () => {
     expect(await screen.findByRole('alert')).toBeInTheDocument();
   });
 });
+
+describe('CheckoutModal — retail walk-in pays cash, unasked', () => {
+  it('asks a retail walk-in nothing about payment, and settles the bill in full in cash', async () => {
+    const user = userEvent.setup();
+    const { onConfirm } = setup({ saleType: 'Retail' });
+
+    expect(screen.getByTestId('checkout-cash-only')).toHaveTextContent(/paid in full in cash/i);
+    expect(screen.queryByRole('radio', { name: /bank transfer/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('radio', { name: /^cash$/i })).not.toBeInTheDocument();
+
+    await complete(user);
+
+    await waitFor(() =>
+      expect(onConfirm).toHaveBeenCalledWith(
+        expect.objectContaining({ customerId: null, paymentMethod: 'Cash', amountPaid: 2200 }),
+      ),
+    );
+  });
+
+  it('asks a wholesale walk-in how they paid', async () => {
+    const user = userEvent.setup();
+    const { onConfirm } = setup({ saleType: 'Wholesale' });
+
+    expect(screen.queryByTestId('checkout-cash-only')).not.toBeInTheDocument();
+    await choosePayment(user, /bank transfer/i);
+    await complete(user);
+
+    await waitFor(() =>
+      expect(onConfirm).toHaveBeenCalledWith(expect.objectContaining({ paymentMethod: 'BankTransfer', amountPaid: 2200 })),
+    );
+  });
+
+  it('still asks an udhaar customer on a retail sale — they may pay later', async () => {
+    const user = userEvent.setup();
+    setup({ saleType: 'Retail' });
+
+    await chooseBilal(user);
+
+    expect(screen.queryByTestId('checkout-cash-only')).not.toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: FULL_UDHAAR })).toBeInTheDocument();
+  });
+
+  it('goes back to cash, unasked, when an udhaar sale is switched back to a retail walk-in', async () => {
+    const user = userEvent.setup();
+    const { onConfirm } = setup({ saleType: 'Retail' });
+
+    await chooseBilal(user);
+    await choosePayment(user, FULL_UDHAAR);
+    await user.click(screen.getByRole('radio', { name: /walk-in customer/i }));
+    await complete(user);
+
+    await waitFor(() =>
+      expect(onConfirm).toHaveBeenCalledWith(expect.objectContaining({ customerId: null, paymentMethod: 'Cash', amountPaid: 2200 })),
+    );
+  });
+});
+
+describe('CheckoutModal — an udhaar customer is asked: part now, or full udhaar', () => {
+  it('asks the two options first, and will not complete until one is chosen', async () => {
+    const user = userEvent.setup();
+    const { onConfirm } = setup();
+
+    await chooseBilal(user);
+
+    expect(screen.getByRole('radiogroup', { name: /how is this bill settled/i })).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: PART_NOW })).not.toBeChecked();
+    expect(screen.getByRole('radio', { name: FULL_UDHAAR })).not.toBeChecked();
+    // Nothing about cash or transfers until the part option is chosen.
+    expect(screen.queryByRole('radiogroup', { name: /paid by/i })).not.toBeInTheDocument();
+
+    await complete(user);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/pay part now, or full udhaar/i);
+    expect(onConfirm).not.toHaveBeenCalled();
+  });
+
+  it('after "Pay part now", asks how the part was paid before taking it', async () => {
+    const user = userEvent.setup();
+    const { onConfirm } = setup();
+
+    await chooseBilal(user);
+    await choosePayment(user, PART_NOW);
+
+    const paidBy = screen.getByRole('radiogroup', { name: /paid by/i });
+    for (const label of [/^cash$/i, /bank transfer/i, /jazzcash/i, /easypaisa/i, /raast/i]) {
+      expect(within(paidBy).getByRole('radio', { name: label })).toBeInTheDocument();
+    }
+
+    fireEvent.change(screen.getByLabelText('Paid now'), { target: { value: '1000' } });
+    await complete(user);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/say how the part was paid/i);
+    expect(onConfirm).not.toHaveBeenCalled();
+  });
+
+  it('saves a part paid by JazzCash under JazzCash, with its reference, and the rest owed', async () => {
+    const user = userEvent.setup();
+    const { onConfirm } = setup();
+
+    await chooseBilal(user);
+    await choosePayment(user, PART_NOW);
+    await user.click(within(screen.getByRole('radiogroup', { name: /paid by/i })).getByRole('radio', { name: /jazzcash/i }));
+    fireEvent.change(screen.getByLabelText('Paid now'), { target: { value: '1000' } });
+    await user.type(screen.getByLabelText(/account number/i), '03001234567');
+    await user.type(screen.getByLabelText(/transaction id/i), 'JC-7781');
+
+    expect(screen.getByTestId('checkout-remaining')).toHaveTextContent(/1,200/);
+
+    await complete(user);
+
+    await waitFor(() =>
+      expect(onConfirm).toHaveBeenCalledWith(
+        expect.objectContaining({
+          customerId: bilal.id,
+          paymentMethod: 'JazzCash',
+          amountPaid: 1000,
+          paymentAccountNumber: '03001234567',
+          paymentTransactionId: 'JC-7781',
+        }),
+      ),
+    );
+  });
+
+  it('saves a part paid in cash as a part payment, with no reference asked', async () => {
+    const user = userEvent.setup();
+    const { onConfirm } = setup();
+
+    await chooseBilal(user);
+    await choosePayment(user, PART_NOW);
+    await user.click(within(screen.getByRole('radiogroup', { name: /paid by/i })).getByRole('radio', { name: /^cash$/i }));
+    fireEvent.change(screen.getByLabelText('Paid now'), { target: { value: '500' } });
+
+    expect(screen.queryByLabelText(/account number/i)).not.toBeInTheDocument();
+
+    await complete(user);
+
+    await waitFor(() =>
+      expect(onConfirm).toHaveBeenCalledWith(
+        expect.objectContaining({ paymentMethod: 'Partial', amountPaid: 500, paymentAccountNumber: null }),
+      ),
+    );
+  });
+});
+

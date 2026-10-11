@@ -61,6 +61,11 @@ function lineTotalPaisa(line: CartLine): number {
     throw new CartError('INVALID_PRICE', 'Unit price cannot be negative.');
   }
 
+  // The owner's rule, mirrored from the server (WholeRupees): a price is whole rupees.
+  if (!Number.isInteger(line.unitSalePrice)) {
+    throw new CartError('INVALID_PRICE', `Price for ${line.productName} must be whole rupees — no paisa.`);
+  }
+
   if (!Number.isFinite(line.lineDiscount) || line.lineDiscount < 0) {
     throw new CartError('NEGATIVE_DISCOUNT', 'Line discount cannot be negative.');
   }

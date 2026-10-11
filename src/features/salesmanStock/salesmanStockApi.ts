@@ -7,6 +7,8 @@ export interface SalesmanHolding {
   productId: number;
   productName: string;
   quantity: number;
+  /** The fixed commission promised on each unit he sells. 0 = none. */
+  commissionPerUnit?: number;
 }
 
 /** One movement in or out of his bag. `changeQty` is + into the bag, − out of it. */
@@ -37,6 +39,8 @@ export interface SalesmanStockStatement {
 export interface SalesmanStockLine {
   productId: number;
   quantity: number;
+  /** When issuing: the fixed commission on each unit he sells, on top of half above the price. */
+  commissionPerUnit?: number;
 }
 
 export const salesmanStockApi = {

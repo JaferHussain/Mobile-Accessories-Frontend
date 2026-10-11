@@ -41,6 +41,15 @@ export interface DashboardData {
   totalReceivables: number;
   totalPayables: number;
   itemsSoldCount: number;
+  /**
+   * On the shelf right now, ready to sell — a snapshot whatever the period. Owned less what
+   * salesmen carry, over priced active products. Every figure is the server's.
+   */
+  shopStock?: {
+    unitsInShop: number;
+    productsInStock: number;
+    unitsWithSalesmen: number;
+  };
   lowStockProducts: LowStockProduct[];
 }
 
@@ -210,6 +219,18 @@ export function Dashboard({
               value={String(data.itemsSoldCount)}
               testId="kpi-items-sold"
             />
+            {data.shopStock && (
+              <KpiCard
+                label="Ready to sell in shop"
+                value={`${data.shopStock.unitsInShop.toLocaleString('en-PK')} ${data.shopStock.unitsInShop === 1 ? 'item' : 'items'}`}
+                testId="kpi-shop-stock"
+                note={
+                  `${data.shopStock.productsInStock} ${data.shopStock.productsInStock === 1 ? 'product' : 'products'} in stock` +
+                  (data.shopStock.unitsWithSalesmen > 0 ? ` · ${data.shopStock.unitsWithSalesmen} more with salesmen` : '')
+                }
+                tone={data.shopStock.unitsInShop === 0 ? 'bad' : undefined}
+              />
+            )}
           </div>
 
           <section className="dashboard__low-stock">

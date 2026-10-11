@@ -4,7 +4,8 @@ import { formatPkr } from '@/lib/money';
 import { supplierApi } from '@/features/suppliers/supplierApi';
 import { attachProofAfterSave, proofApi, proofOutcomeText } from '@/features/proofs/proofApi';
 import { PurchaseBillForm, type PurchaseBillSubmission } from './PurchaseBillForm';
-import { PurchaseBillsList, billDay } from './PurchaseBillsList';
+import { PurchaseBillsList } from './PurchaseBillsList';
+import { billDay } from './billDay';
 import { purchaseBillApi } from './purchaseBillApi';
 
 /**

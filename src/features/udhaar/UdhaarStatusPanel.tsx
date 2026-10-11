@@ -8,12 +8,14 @@ import { udhaarApi } from './udhaarApi';
 /**
  * A customer's udhaar standing, on their ledger — the owner's only. Not an udhaar customer:
  * <b>Make udhaar customer</b>, which asks for the phone and ID card (a tick would get round it).
- * Already one: a highlighted badge, the ID card, and — if they were marked before cards were
- * asked for — a prompt to complete it.
+ * Already one: a highlighted badge, the ID card, <b>Edit</b> (name, phone, a replacement photo), and
+ * — if they were marked before cards were asked for — a prompt to complete it.
  */
 export function UdhaarStatusPanel({ customerId }: { customerId: number }) {
   const queryClient = useQueryClient();
   const [isRegistering, setIsRegistering] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const status = useQuery({ queryKey: ['udhaar-status', customerId], queryFn: () => udhaarApi.status(customerId) });
@@ -42,10 +44,27 @@ export function UdhaarStatusPanel({ customerId }: { customerId: number }) {
     await refresh();
   }
 
+  async function saveEdit(values: UdhaarRegistrationValues) {
+    const saved = await udhaarApi.update(customerId, {
+      name: values.name,
+      mobileNumber: values.mobileNumber,
+      idCardFront: values.idCardFront,
+      idCardBack: values.idCardBack,
+    });
+    setIsEditing(false);
+    setNotice(`${saved.name}'s details are saved.`);
+    // The ledger's heading and the customer list read the same name and phone.
+    await Promise.all([refresh(), queryClient.invalidateQueries({ queryKey: ['ledger', customerId] })]);
+  }
+
   const data = status.data;
 
   if (!data) {
     return null;
+  }
+
+  if (isEditing && data.isUdhaarCustomer) {
+    return <UdhaarRegistrationForm existing={data} isEdit onSubmit={saveEdit} onCancel={() => setIsEditing(false)} />;
   }
 
   if (isRegistering) {
@@ -60,6 +79,12 @@ export function UdhaarStatusPanel({ customerId }: { customerId: number }) {
         </p>
       )}
 
+      {notice && (
+        <p className="form-success" role="status">
+          {notice}
+        </p>
+      )}
+
       {data.isUdhaarCustomer ? (
         <>
           <span className="badge badge--udhaar">Udhaar customer</span>
@@ -67,6 +92,16 @@ export function UdhaarStatusPanel({ customerId }: { customerId: number }) {
 
           <span className="udhaar-status__actions">
             <IdCardViewer customer={data} />
+            <button
+              type="button"
+              onClick={() => {
+                setError(null);
+                setNotice(null);
+                setIsEditing(true);
+              }}
+            >
+              Edit details
+            </button>
             {data.idCardMissing && (
               <button type="button" onClick={() => setIsRegistering(true)}>
                 Complete ID card

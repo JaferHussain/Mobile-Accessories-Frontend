@@ -30,6 +30,12 @@ vi.mock('@/features/returns/returnApi', () => ({
   },
 }));
 
+vi.mock('@/features/shopAccounts/shopAccountApi', () => ({
+  shopAccountApi: { choices: vi.fn().mockResolvedValue([]) },
+  accountLabel: (account: { name: string }) => account.name,
+  methodsFor: () => ['BankTransfer'],
+}));
+
 vi.mock('@/features/suppliers/supplierApi', () => ({
   purchaseApi: { search: vi.fn() },
   supplierApi: { search: vi.fn() },
@@ -152,6 +158,19 @@ describe('customer returns', () => {
 
     expect(await screen.findByText(/at least 2 letters/i)).toBeInTheDocument();
     expect(returnApi.findReturnableLines).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['field salesman', { ...staff, job: 'FieldSales' as const }],
+    ['counter shopkeeper', { ...staff, job: 'Counter' as const }],
+  ])('tells a %s he sees only his own sales', async (_who, user) => {
+    renderPage(user);
+    expect(await screen.findByTestId('own-sales-only')).toHaveTextContent(/only your own sales/i);
+  });
+
+  it('says nothing of it to the owner', () => {
+    renderPage(admin);
+    expect(screen.queryByTestId('own-sales-only')).not.toBeInTheDocument();
   });
 
   it('is available to a salesman, and called a sale return', async () => {
@@ -279,7 +298,7 @@ describe('customer returns', () => {
     await userEvent.click(screen.getByRole('button', { name: /record return/i }));
 
     expect(returnApi.recordSaleReturn).toHaveBeenCalledWith(
-      77, [{ invoiceItemId: 5, quantity: 1 }], null, 'Cash', null,
+      77, [{ invoiceItemId: 5, quantity: 1 }], null, 'Cash', null, null,
     );
 
     // The popup names the exact product and confirms the stock it left behind.
